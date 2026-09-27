@@ -1,7 +1,11 @@
 # Java build output
 /build/
 /dist/
+/target/
 *.class
+
+# Serialized runtime data
+/data/
 
 # NetBeans user-specific files
 /nbproject/private/

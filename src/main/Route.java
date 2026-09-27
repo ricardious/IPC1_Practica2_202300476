@@ -1,10 +1,17 @@
 package main;
 
+import java.io.Serial;
+import java.io.Serializable;
+import java.util.Objects;
+
 /**
  *
  * @author Ricardious
  */
-class Route {
+public class Route implements Serializable {
+    @Serial
+    private static final long serialVersionUID = 1L;
+
     private int id;
     private String start;
     private String end;
@@ -52,9 +59,11 @@ class Route {
         // Por medio de esta funcion se retorna en un string los datos del objeto actual
     @Override
     public String toString() {
-        return "Route{" + "id=" + id + ", start=" + start + ", end=" + end + ", distance=" + distance + '}';
+        return start + " → " + end + " (" + distance + " km)";
     }
-    
-    
-    
+
+    public boolean connects(String origin, String destination) {
+        return (Objects.equals(start, origin) && Objects.equals(end, destination))
+                || (Objects.equals(start, destination) && Objects.equals(end, origin));
+    }
 }
