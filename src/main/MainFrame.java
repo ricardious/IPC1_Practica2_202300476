@@ -19,7 +19,6 @@ import java.io.IOException;
 import java.text.DecimalFormat;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -57,7 +56,6 @@ public class MainFrame extends JFrame {
     private static final DecimalFormat DECIMAL = new DecimalFormat("0.00");
 
     private final AppState state;
-    private final PersistenceService persistence;
     private final TripManager tripManager;
     private final CardLayout cardLayout = new CardLayout();
     private final JPanel contentPanel = new JPanel(cardLayout);
@@ -82,7 +80,6 @@ public class MainFrame extends JFrame {
     public MainFrame(AppState state, PersistenceService persistence) {
         super("UDrive - Gestión de viajes");
         this.state = state;
-        this.persistence = persistence;
         this.tripManager = new TripManager(state, persistence, new TripManager.Listener() {
             @Override
             public void onStateChanged() {
