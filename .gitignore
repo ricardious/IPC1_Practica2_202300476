@@ -1,0 +1,28 @@
+# Java build output
+/build/
+/dist/
+*.class
+
+# NetBeans user-specific files
+/nbproject/private/
+/nbbuild/
+/nbdist/
+/.nb-gradle/
+
+# IntelliJ IDEA
+/.idea/
+*.iws
+*.ipr
+*.iml
+
+# Operating system and editor files
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.swo
+
+# Runtime output
+*.log
+hs_err_pid*
+replay_pid*
