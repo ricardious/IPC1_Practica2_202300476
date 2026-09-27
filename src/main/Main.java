@@ -1,77 +1,37 @@
 package main;
 
 import com.formdev.flatlaf.themes.FlatMacLightLaf;
-import java.io.File;
-import java.util.ArrayList;
-import javax.swing.JFileChooser;
+import java.awt.EventQueue;
+import java.io.IOException;
+import java.nio.file.Path;
+import javax.swing.JOptionPane;
 import javax.swing.UIManager;
 
-/**
- *
- * @author Ricardious
- */
-public class Main {
-
-    static ArrayList<Route> routes = new ArrayList<Route>();
-    static ArrayList<String> inicioList = new ArrayList<>();
-    static ArrayList<String> finList = new ArrayList<>();
-    private static int counterRoutes = 0;
-    private static int counterTrips = 0;
-    
-    
-    private JFileChooser fileChooser;
-    private File JFileSelected;
-
-    public static void main(String args[]) {
-        try {
-            UIManager.setLookAndFeel(new FlatMacLightLaf());
-            UIManager.put("TextComponent.arc", 10);
-        } catch (Exception ex) {
-            System.err.println("Failed to initialize LaF");
-        }
-
-        // Instanceando un objeto de tipo Window (es nuestra interfaz gráfica)
-        MainFrame login = new MainFrame();
-        login.setVisible(true);
-
-        System.out.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-
-        
-    }
-    
-
-    
-
-        
-    public static int generateId(String option) {
-        int id = 0;
-        switch (option) {
-            case "route":
-                id = counterRoutes + 1;
-                counterRoutes++;
-                break;
-            case "trip":
-                id = counterTrips + 1;
-                counterTrips++;
-                break;
-        }
-
-        return id;
+public final class Main {
+    private Main() {
     }
 
-        
+    public static void main(String[] args) {
+        FlatMacLightLaf.setup();
+        UIManager.put("Component.arc", 12);
+        UIManager.put("Button.arc", 12);
+        UIManager.put("TextComponent.arc", 10);
 
-
-    public static void editTable(int id, String start, String end, int distance){
-        for (Route route : routes) {
-            if (route.getId() == id) {
-                route.getDistance();
-                break;
+        EventQueue.invokeLater(() -> {
+            PersistenceService persistence = new PersistenceService(
+                    Path.of("data", "udrive-state.bin"));
+            AppState state;
+            try {
+                state = persistence.load();
+            } catch (IOException exception) {
+                JOptionPane.showMessageDialog(null,
+                        "No se pudo recuperar el estado anterior. Se iniciará una sesión nueva.\n"
+                                + exception.getMessage(),
+                        "Estado dañado", JOptionPane.WARNING_MESSAGE);
+                state = new AppState();
             }
-        }
+            MainFrame frame = new MainFrame(state, persistence);
+            frame.setVisible(true);
+        });
     }
-
-    
-    
-
 }

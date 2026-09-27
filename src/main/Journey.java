@@ -1,65 +1,95 @@
 package main;
 
-import javax.swing.JButton;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.SwingUtilities;
+public final class Journey extends Thread {
+    public interface Listener {
+        void onProgress(Trip trip);
 
-/**
- *
- * @author Ricardious
- */
+        void onFuelEmpty(Trip trip);
 
-import javax.swing.*;
-
-public class Journey extends Thread {
-    private volatile boolean running = true;
-    private JLabel labelToMove;
-    private JLabel destinationLabel;
-    private int startX;
-    private int endX;
-    private int stepSize = 5; // Tamaño del paso de movimiento
-    private MainFrame mainFrame;
-
-    public Journey(JLabel labelToMove, JLabel destinationLabel) {
-        this.labelToMove = labelToMove;
-        this.destinationLabel = destinationLabel;
-
-        this.startX = labelToMove.getX();
-        this.endX = destinationLabel.getX() - labelToMove.getWidth(); // Ajuste para detenerse justo antes del destino
+        void onArrived(Trip trip, boolean returnLeg);
     }
 
+    static final long TICK_MILLIS = 150L;
+    static final double KILOMETERS_PER_TICK = 1.0;
+
+    private final Trip trip;
+    private final Vehicle vehicle;
+    private final boolean returnLeg;
+    private final Listener listener;
+    private final Object fuelMonitor = new Object();
+    private volatile boolean running = true;
+
+    public Journey(Trip trip, Vehicle vehicle, boolean returnLeg, Listener listener) {
+        super("viaje-" + trip.getId() + (returnLeg ? "-retorno" : "-ida"));
+        this.trip = trip;
+        this.vehicle = vehicle;
+        this.returnLeg = returnLeg;
+        this.listener = listener;
+        setDaemon(true);
+    }
+
+    @Override
     public void run() {
-        try {
-            // Calcula el desplazamiento necesario en el eje X
-            int deltaX = endX - startX;
-            // Calcula la distancia total que se necesita para llegar justo antes del destino
-            double distance = Math.abs(deltaX);
-            // Calcula el número total de pasos necesarios para alcanzar el destino
-            int numSteps = (int) (distance / stepSize);
-            // Calcula el tamaño del paso en el eje X
-            double stepX = deltaX / (double) numSteps;
+        while (running && trip.getCurrentLegProgressKm() < trip.getRouteDistanceKm()) {
+            double remaining = trip.getRouteDistanceKm() - trip.getCurrentLegProgressKm();
+            double step = Math.min(KILOMETERS_PER_TICK, remaining);
+            double consumption = step * vehicle.getType().getConsumptionPerKm();
 
-            // Mueve gradualmente el JLabel hacia el destino en el eje X
-            for (int i = 0; i < numSteps && running; i++) {
-                int newX = (int) Math.round(startX + i * stepX);
-                SwingUtilities.invokeLater(() -> {
-                    labelToMove.setLocation(newX, labelToMove.getY());
-                    this.labelToMove.repaint();
-
-                });
-                Thread.sleep(140); // Pausa el hilo para suavizar el movimiento
+            if (!vehicle.consume(consumption)) {
+                trip.setStatus(returnLeg
+                        ? TripStatus.OUT_OF_FUEL_RETURN
+                        : TripStatus.OUT_OF_FUEL_OUTBOUND);
+                listener.onFuelEmpty(trip);
+                waitForFuel(consumption);
+                if (!running) {
+                    return;
+                }
+                trip.setStatus(returnLeg ? TripStatus.RETURNING : TripStatus.OUTBOUND);
+                continue;
             }
 
-            SwingUtilities.invokeLater(() -> {
-                labelToMove.setLocation(endX, labelToMove.getY());
-                this.labelToMove.repaint();
-
-            });
-
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+            trip.advance(step, consumption);
+            listener.onProgress(trip);
+            try {
+                Thread.sleep(TICK_MILLIS);
+            } catch (InterruptedException exception) {
+                if (!running) {
+                    return;
+                }
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        if (running) {
+            listener.onArrived(trip, returnLeg);
         }
     }
 
+    private void waitForFuel(double requiredFuel) {
+        synchronized (fuelMonitor) {
+            while (running && vehicle.getFuel() + 0.000001 < requiredFuel) {
+                try {
+                    fuelMonitor.wait();
+                } catch (InterruptedException exception) {
+                    if (!running) {
+                        return;
+                    }
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
+    }
+
+    public void fuelAvailable() {
+        synchronized (fuelMonitor) {
+            fuelMonitor.notifyAll();
+        }
+    }
+
+    public void cancel() {
+        running = false;
+        fuelAvailable();
+        interrupt();
+    }
 }
