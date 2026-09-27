@@ -67,7 +67,7 @@ public class MainFrame extends JFrame {
             "ID", "Inicio", "Fin", "Distancia (km)");
     private final DefaultTableModel historyModel = readOnlyModel(
             "Viaje", "Ruta", "Inicio", "Fin", "Vehículo", "Piloto",
-            "Trayectoria (km)", "Combustible (gal)");
+            "Distancia ruta (km)", "Trayectoria (km)", "Combustible (gal)");
     private final JTable routesTable = new JTable(routesModel);
     private final JTable historyTable = new JTable(historyModel);
     private final JComboBox<String> originBox = new JComboBox<>();
@@ -200,7 +200,7 @@ public class MainFrame extends JFrame {
         JPanel status = new JPanel(new FlowLayout(FlowLayout.RIGHT, 16, 6));
         status.setBackground(Color.WHITE);
         storageLabel.setForeground(MUTED);
-        storageLabel.setText("Persistencia: " + persistence.getStateFile().toAbsolutePath());
+        storageLabel.setText("Persistencia automática activa");
         status.add(storageLabel);
         return status;
     }
@@ -488,6 +488,7 @@ public class MainFrame extends JFrame {
                             formatDate(trip.getEndedAt()),
                             vehicle == null ? "-" : vehicle.getName(),
                             driver == null ? "-" : driver.getName(),
+                            trip.getRouteDistanceKm(),
                             DECIMAL.format(trip.getTotalDistanceKm()),
                             DECIMAL.format(trip.getFuelConsumed())
                     });
