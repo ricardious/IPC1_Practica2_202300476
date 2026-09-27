@@ -19,6 +19,11 @@
 *.ipr
 *.iml
 
+# Eclipse and other IDE metadata
+/.classpath
+/.project
+/.settings/
+
 # Operating system and editor files
 .DS_Store
 Thumbs.db
