@@ -72,3 +72,9 @@ from its saved position the next time it opens.
 - [User manual](docs/Manual%20de%20Usuario.pdf)
 - [Technical manual](docs/Manual%20T%C3%A9cnico.pdf)
 - [Assignment brief](docs/Practica2_IPC1.pdf)
+
+## Original 2024 design
+
+The original interface and editable NetBeans forms are now the main application
+in `src/main/`. A historical snapshot remains in [`legacy/2024`](legacy/2024),
+with its [original-design screenshot](legacy/2024/diseno-original.png).

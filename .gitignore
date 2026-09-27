@@ -2,6 +2,10 @@
 /build/
 /dist/
 /target/
+/legacy/2024/target/
+/legacy/2024/build/
+/legacy/2024/dist/
+/legacy/2024/nbproject/private/
 *.class
 
 # Serialized runtime data
