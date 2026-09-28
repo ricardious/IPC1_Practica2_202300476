@@ -9,11 +9,14 @@ NetBeans design, along with its Java classes, images, and animations.
 ![Original UDrive window](diseno-original.png)
 
 The `pom.xml` in this directory was added later so the original version can be
-built with dependencies available today. It does not modify the historical
-source code or mix it with the completed application.
+built with dependencies available today. The only correction to the historical
+files is the logo path in `MainFrame.java` and `MainFrame.form`: it now points to
+the bundled `/vehicles/logo.png` resource instead of a local Windows path. The
+visual design is unchanged. The exact source before this correction is still
+available in commit `8f6fa6f`.
 
 The original `nbproject/` configuration still contains references to old Windows
-folders and a local JAR from the original setup. From the repository root,
+folders and a local JAR that is no longer bundled. From the repository root,
 use Maven to run this version:
 
 ```bash
