@@ -67,6 +67,20 @@ The application saves its state through Java serialization in
 from version control. If the application closes during a trip, the trip resumes
 from its saved position the next time it opens.
 
+## Screenshots
+
+These screenshots show the original interface running with routes from the
+included CSV file and a sample trip.
+
+![Original UDrive interface with imported routes](docs/screenshots/01-routes.png)
+
+| Step | Screenshot |
+| --- | --- |
+| Select a trip | [View](docs/screenshots/02-generate-trip.png) |
+| Prepared trip | [View](docs/screenshots/03-trip-prepared.png) |
+| Trip in progress | [View](docs/screenshots/04-trip-running.png) |
+| Completed trip history | [View](docs/screenshots/05-trip-history.png) |
+
 ## Documentation
 
 - [User manual](docs/Manual%20de%20Usuario.pdf)
