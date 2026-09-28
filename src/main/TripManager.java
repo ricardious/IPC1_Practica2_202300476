@@ -161,10 +161,12 @@ public class TripManager {
     }
 
     private void complete(Trip trip) {
-        trip.markCompleted();
-        state.releaseResources(trip);
-        runningJourneys.remove(trip.getId());
-        save();
+        synchronized (trip) {
+            trip.markCompleted();
+            state.releaseResources(trip);
+            runningJourneys.remove(trip.getId());
+            save();
+        }
         listener.onStateChanged();
     }
 }

@@ -1,698 +1,1150 @@
 package main;
 
-import java.awt.BorderLayout;
-import java.awt.CardLayout;
 import java.awt.Color;
-import java.awt.Component;
-import java.awt.Dimension;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.GridLayout;
-import java.awt.Image;
-import java.awt.Insets;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
+import java.awt.GradientPaint;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Point;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.geom.RoundRectangle2D;
 import java.io.File;
 import java.io.IOException;
-import java.text.DecimalFormat;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import javax.swing.BorderFactory;
-import javax.swing.Box;
-import javax.swing.BoxLayout;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.ImageIcon;
-import javax.swing.JButton;
-import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JProgressBar;
-import javax.swing.JScrollPane;
-import javax.swing.JTable;
-import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableModel;
+import javax.swing.JLabel;
 
-public class MainFrame extends JFrame {
-    private static final Color PRIMARY = new Color(67, 56, 202);
-    private static final Color PRIMARY_DARK = new Color(49, 46, 129);
-    private static final Color SURFACE = new Color(248, 250, 252);
-    private static final Color MUTED = new Color(100, 116, 139);
-    private static final Color SUCCESS = new Color(22, 163, 74);
-    private static final Color DANGER = new Color(220, 38, 38);
+/**
+ *
+ * @author Ricardious
+ */
+public class MainFrame extends javax.swing.JFrame {
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
-    private static final DecimalFormat DECIMAL = new DecimalFormat("0.00");
-
     private final AppState state;
     private final TripManager tripManager;
-    private final CardLayout cardLayout = new CardLayout();
-    private final JPanel contentPanel = new JPanel(cardLayout);
-    private final Map<Integer, TripCard> tripCards = new ConcurrentHashMap<>();
+    private final Trip[] visibleTrips = new Trip[3];
+    private final javax.swing.JButton[] finishButtons = new javax.swing.JButton[3];
 
-    private final DefaultTableModel routesModel = readOnlyModel(
-            "ID", "Inicio", "Fin", "Distancia (km)");
-    private final DefaultTableModel historyModel = readOnlyModel(
-            "Viaje", "Ruta", "Inicio", "Fin", "Vehículo", "Piloto",
-            "Distancia ruta (km)", "Trayectoria (km)", "Combustible (gal)");
-    private final JTable routesTable = new JTable(routesModel);
-    private final JTable historyTable = new JTable(historyModel);
-    private final JComboBox<String> originBox = new JComboBox<>();
-    private final JComboBox<String> destinationBox = new JComboBox<>();
-    private final JComboBox<Vehicle> vehicleBox = new JComboBox<>();
-    private final JLabel pilotAvailability = new JLabel();
-    private final JButton generateButton = primaryButton("Generar viaje");
-    private final JPanel tripsContainer = new JPanel();
-    private final JLabel storageLabel = new JLabel();
-    private boolean persistenceErrorVisible;
+    private int mouseX, mouseY;
+    private JFileChooser fileChooser;
+    private File JFileSelected;
 
     public MainFrame(AppState state, PersistenceService persistence) {
-        super("UDrive - Gestión de viajes");
         this.state = state;
         this.tripManager = new TripManager(state, persistence, new TripManager.Listener() {
             @Override
             public void onStateChanged() {
-                SwingUtilities.invokeLater(MainFrame.this::refreshAll);
+                javax.swing.SwingUtilities.invokeLater(MainFrame.this::refreshAll);
             }
 
             @Override
             public void onProgress(Trip trip) {
-                SwingUtilities.invokeLater(() -> refreshTripProgress(trip));
+                javax.swing.SwingUtilities.invokeLater(MainFrame.this::refreshTrips);
             }
 
             @Override
             public void onPersistenceError(IOException exception) {
-                SwingUtilities.invokeLater(() -> showPersistenceError(exception));
+                javax.swing.SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+                        MainFrame.this, exception.getMessage(), "Could not save state",
+                        JOptionPane.ERROR_MESSAGE));
             }
         });
+        this.setUndecorated(true);
+        initComponents();
+        this.setLocationRelativeTo(null);
+        // Configuración inicial del JLabel de pilotos no disponibles
+        noPilotsLabel.setForeground(Color.RED); // Texto en color rojo
+        noPilotsLabel.setText("No hay pilotos disponibles por el momento");
+        noPilotsLabel.setVisible(false); // Inicialmente invisible
 
-        configureFrame();
-        buildInterface();
-        refreshAll();
-        tripManager.restoreRunningTrips();
-    }
+        RoundRectangle2D.Float shape = new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 20, 20);
+        setShape(shape);
 
-    private void configureFrame() {
-        setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
-        setMinimumSize(new Dimension(1080, 700));
-        setSize(1180, 760);
-        setLocationRelativeTo(null);
-        addWindowListener(new WindowAdapter() {
+        MouseAdapter windowDrag = new MouseAdapter() {
+            private boolean dragging;
+
             @Override
-            public void windowClosing(WindowEvent event) {
+            public void mousePressed(MouseEvent evt) {
+                Point point = javax.swing.SwingUtilities.convertPoint(
+                        evt.getComponent(), evt.getPoint(), MainFrame.this);
+                dragging = javax.swing.SwingUtilities.isLeftMouseButton(evt)
+                        && point.y < 50;
+                if (dragging) {
+                    mouseX = evt.getXOnScreen() - getX();
+                    mouseY = evt.getYOnScreen() - getY();
+                }
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent evt) {
+                if (dragging) {
+                    setLocation(evt.getXOnScreen() - mouseX, evt.getYOnScreen() - mouseY);
+                }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent evt) {
+                dragging = false;
+            }
+        };
+        jLabel4.addMouseListener(windowDrag);
+        jLabel4.addMouseMotionListener(windowDrag);
+        jTabbedPane1.addMouseListener(windowDrag);
+        jTabbedPane1.addMouseMotionListener(windowDrag);
+        for (int index = 0; index < jTabbedPane1.getTabCount(); index++) {
+            jTabbedPane1.setEnabledAt(index, false);
+        }
+        panelTripStart.setComponentZOrder(transport1, 0);
+        panelTripStart.setComponentZOrder(transport2, 0);
+        panelTripStart.setComponentZOrder(transport3, 0);
+
+        jButton3.addActionListener(event -> tripManager.startReturn(visibleTrips[0]));
+        jButton7.addActionListener(event -> tripManager.startReturn(visibleTrips[2]));
+        MouseAdapter logout = new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent event) {
                 tripManager.shutdown();
                 dispose();
             }
-        });
-    }
-
-    private void buildInterface() {
-        JPanel root = new JPanel(new BorderLayout());
-        root.setBackground(SURFACE);
-        root.add(createSidebar(), BorderLayout.WEST);
-        root.add(contentPanel, BorderLayout.CENTER);
-        root.add(createStatusBar(), BorderLayout.SOUTH);
-        setContentPane(root);
-
-        contentPanel.add(createRoutesPanel(), "routes");
-        contentPanel.add(createGeneratePanel(), "generate");
-        contentPanel.add(createTripsPanel(), "trips");
-        contentPanel.add(createHistoryPanel(), "history");
-        cardLayout.show(contentPanel, "routes");
-    }
-
-    private JPanel createSidebar() {
-        JPanel sidebar = new JPanel();
-        sidebar.setBackground(PRIMARY_DARK);
-        sidebar.setPreferredSize(new Dimension(220, 0));
-        sidebar.setBorder(BorderFactory.createEmptyBorder(24, 16, 24, 16));
-        sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
-
-        JLabel logo = new JLabel(loadScaledIcon("/vehicles/logo.png", 74, 74));
-        logo.setAlignmentX(Component.CENTER_ALIGNMENT);
-        JLabel title = new JLabel("UDRIVE");
-        title.setForeground(Color.WHITE);
-        title.setFont(title.getFont().deriveFont(Font.BOLD, 27f));
-        title.setAlignmentX(Component.CENTER_ALIGNMENT);
-        title.setHorizontalAlignment(SwingConstants.CENTER);
-        title.setMaximumSize(new Dimension(188, 38));
-        JLabel subtitle = new JLabel("Gestión de viajes");
-        subtitle.setForeground(new Color(199, 210, 254));
-        subtitle.setAlignmentX(Component.CENTER_ALIGNMENT);
-        subtitle.setHorizontalAlignment(SwingConstants.CENTER);
-        subtitle.setMaximumSize(new Dimension(188, 24));
-
-        sidebar.add(logo);
-        sidebar.add(Box.createVerticalStrut(8));
-        sidebar.add(title);
-        sidebar.add(subtitle);
-        sidebar.add(Box.createVerticalStrut(40));
-        sidebar.add(navigationButton("Rutas", "routes"));
-        sidebar.add(Box.createVerticalStrut(10));
-        sidebar.add(navigationButton("Generar viaje", "generate"));
-        sidebar.add(Box.createVerticalStrut(10));
-        sidebar.add(navigationButton("Viajes en curso", "trips"));
-        sidebar.add(Box.createVerticalStrut(10));
-        sidebar.add(navigationButton("Historial", "history"));
-        sidebar.add(Box.createVerticalGlue());
-
-        JLabel version = new JLabel("UDrive 1.0");
-        version.setForeground(new Color(165, 180, 252));
-        version.setAlignmentX(Component.CENTER_ALIGNMENT);
-        sidebar.add(version);
-        return sidebar;
-    }
-
-    private JButton navigationButton(String text, String card) {
-        JButton button = new JButton(text);
-        button.setForeground(Color.WHITE);
-        button.setBackground(PRIMARY);
-        button.setFont(button.getFont().deriveFont(Font.BOLD, 15f));
-        button.setHorizontalAlignment(SwingConstants.LEFT);
-        button.setAlignmentX(Component.LEFT_ALIGNMENT);
-        button.setMinimumSize(new Dimension(188, 46));
-        button.setPreferredSize(new Dimension(188, 46));
-        button.setMaximumSize(new Dimension(188, 46));
-        button.setFocusPainted(false);
-        button.setBorder(BorderFactory.createEmptyBorder(10, 18, 10, 18));
-        button.addActionListener(event -> {
-            refreshAll();
-            cardLayout.show(contentPanel, card);
-        });
-        return button;
-    }
-
-    private JPanel createStatusBar() {
-        JPanel status = new JPanel(new FlowLayout(FlowLayout.RIGHT, 16, 6));
-        status.setBackground(Color.WHITE);
-        storageLabel.setForeground(MUTED);
-        storageLabel.setText("Persistencia automática activa");
-        status.add(storageLabel);
-        return status;
-    }
-
-    private JPanel createRoutesPanel() {
-        JPanel panel = pagePanel("Rutas disponibles",
-                "Carga archivos CSV con la estructura Inicio,Fin,Distancia y administra sus valores.");
-
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        actions.setOpaque(false);
-        JButton loadButton = primaryButton("Cargar rutas CSV");
-        JButton editButton = secondaryButton("Editar distancia");
-        loadButton.addActionListener(event -> chooseCsv());
-        editButton.addActionListener(event -> editSelectedRoute());
-        actions.add(loadButton);
-        actions.add(editButton);
-        panel.add(actions, BorderLayout.NORTH);
-
-        routesTable.setRowHeight(30);
-        routesTable.setFillsViewportHeight(true);
-        routesTable.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
-        JScrollPane scroll = new JScrollPane(routesTable);
-        scroll.setBorder(BorderFactory.createEmptyBorder(18, 0, 0, 0));
-        panel.add(scroll, BorderLayout.CENTER);
-        return panel;
-    }
-
-    private JPanel createGeneratePanel() {
-        JPanel panel = pagePanel("Generar viaje",
-                "Selecciona una ruta y uno de los nueve vehículos. El primer piloto libre será asignado.");
-        JPanel form = new JPanel(new GridBagLayout());
-        form.setOpaque(false);
-        form.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(226, 232, 240)),
-                BorderFactory.createEmptyBorder(28, 32, 28, 32)));
-
-        GridBagConstraints constraints = new GridBagConstraints();
-        constraints.insets = new Insets(10, 10, 10, 10);
-        constraints.fill = GridBagConstraints.HORIZONTAL;
-        constraints.weightx = 1;
-        addField(form, constraints, 0, "Punto inicial", originBox);
-        addField(form, constraints, 1, "Punto final", destinationBox);
-        addField(form, constraints, 2, "Vehículo", vehicleBox);
-
-        constraints.gridx = 0;
-        constraints.gridy = 3;
-        constraints.gridwidth = 2;
-        pilotAvailability.setFont(pilotAvailability.getFont().deriveFont(Font.BOLD));
-        form.add(pilotAvailability, constraints);
-
-        constraints.gridy = 4;
-        constraints.anchor = GridBagConstraints.WEST;
-        constraints.fill = GridBagConstraints.NONE;
-        generateButton.addActionListener(event -> generateTrip());
-        form.add(generateButton, constraints);
-
-        JPanel center = new JPanel(new BorderLayout());
-        center.setOpaque(false);
-        center.setBorder(BorderFactory.createEmptyBorder(24, 0, 120, 0));
-        center.add(form, BorderLayout.NORTH);
-        panel.add(center, BorderLayout.CENTER);
-        return panel;
-    }
-
-    private void addField(JPanel form, GridBagConstraints constraints, int row,
-                          String labelText, Component field) {
-        constraints.gridy = row;
-        constraints.gridwidth = 1;
-        constraints.gridx = 0;
-        constraints.weightx = 0.25;
-        JLabel label = new JLabel(labelText);
-        label.setFont(label.getFont().deriveFont(Font.BOLD));
-        form.add(label, constraints);
-        constraints.gridx = 1;
-        constraints.weightx = 0.75;
-        form.add(field, constraints);
-    }
-
-    private JPanel createTripsPanel() {
-        JPanel panel = pagePanel("Viajes preparados y en curso",
-                "Inicia cada viaje por separado o todos a la vez. El retorno se autoriza manualmente.");
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        actions.setOpaque(false);
-        JButton startAll = primaryButton("Iniciar todos los preparados");
-        startAll.addActionListener(event -> tripManager.startAll());
-        actions.add(startAll);
-        panel.add(actions, BorderLayout.NORTH);
-
-        tripsContainer.setLayout(new BoxLayout(tripsContainer, BoxLayout.Y_AXIS));
-        tripsContainer.setBackground(SURFACE);
-        JScrollPane scroll = new JScrollPane(tripsContainer);
-        scroll.setBorder(BorderFactory.createEmptyBorder(16, 0, 0, 0));
-        scroll.getVerticalScrollBar().setUnitIncrement(16);
-        panel.add(scroll, BorderLayout.CENTER);
-        return panel;
-    }
-
-    private JPanel createHistoryPanel() {
-        JPanel panel = pagePanel("Historial de viajes",
-                "Registro persistente de los viajes completados y su consumo de combustible.");
-        historyTable.setRowHeight(30);
-        historyTable.setFillsViewportHeight(true);
-        JScrollPane scroll = new JScrollPane(historyTable);
-        scroll.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
-        panel.add(scroll, BorderLayout.CENTER);
-        return panel;
-    }
-
-    private JPanel pagePanel(String titleText, String subtitleText) {
-        return new PagePanel(titleText, subtitleText);
-    }
-
-    private void chooseCsv() {
-        JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Seleccionar archivo de rutas");
-        chooser.setFileFilter(new FileNameExtensionFilter("Archivos CSV", "csv"));
-        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
-            return;
+        };
+        jPanel11.addMouseListener(logout);
+        jLabel27.addMouseListener(logout);
+        jLabel28.addMouseListener(logout);
+        for (int index = 0; index < finishButtons.length; index++) {
+            int slot = index;
+            javax.swing.JButton button = new javax.swing.JButton("Finish here");
+            button.addActionListener(event -> tripManager.finishAtDestination(visibleTrips[slot]));
+            panelTripStart.add(button, new org.netbeans.lib.awtextra.AbsoluteConstraints(
+                    690, 145 + index * 185, 100, 26));
+            finishButtons[index] = button;
         }
-        File file = chooser.getSelectedFile();
+
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent event) {
+                tripManager.shutdown();
+            }
+        });
+
+        refreshAll();
+        tripManager.restoreRunningTrips();
+
+        panelTripStart.repaint();
+         panelTripStart.setFocusable(true);
+    }
+
+    public JLabel getTransport1(){
+        return lblTransport1;
+    }
+
+    public JLabel getBarrera(){
+        return lblBarrera;
+    }
+
+    public void refreshRoutesTable() {
+        List<Route> routes = state.getRoutes();
+        DefaultTableModel DT = new DefaultTableModel(new String[]{"ID", "Start", "End", "Distance"}, routes.size()) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        jTable1.setModel(DT);
+        TableModel tbModel = jTable1.getModel();
+
+        for (int i = 0; i < routes.size(); i++) {
+            Route ruta = routes.get(i);
+            tbModel.setValueAt(ruta.getId(), i, 0);
+            tbModel.setValueAt(ruta.getStart(), i, 1);
+            tbModel.setValueAt(ruta.getEnd(), i, 2);
+            tbModel.setValueAt(ruta.getDistance(), i, 3);
+        }
+
+    }
+
+    //Choose CSV File
+    private void chooseCSVFile() throws IOException {
+        // Create a file chooser
+        fileChooser = new JFileChooser();
+
+        // Set a file filter if needed (optional)
+        FileNameExtensionFilter filter = new FileNameExtensionFilter("CSV files", "csv");
+        fileChooser.setFileFilter(filter);
+
+        // Show the file chooser dialog
+        int result = fileChooser.showOpenDialog(this);
+
+        // Check if a file was chosen
+        if (result == JFileChooser.APPROVE_OPTION) {
+            // Get the selected file
+            JFileSelected = fileChooser.getSelectedFile();
+
+            // Print the path of the selected file
+            System.out.println("Selected File: " + JFileSelected.getAbsolutePath());
+
+            // Perform CSV read
+            // Perform CSV read and pass the file name
+            importCsv();
+        } else {
+            System.out.println("No file selected");
+        }
+    }
+
+    private void importCsv() {
         try {
-            List<CsvRouteImporter.RouteData> imported = CsvRouteImporter.read(file.toPath());
             int added = 0;
             int duplicates = 0;
-            for (CsvRouteImporter.RouteData route : imported) {
-                if (state.findRoute(route.start(), route.end()).isPresent()) {
+            for (CsvRouteImporter.RouteData item : CsvRouteImporter.read(JFileSelected.toPath())) {
+                if (state.findRoute(item.start(), item.end()).isPresent()) {
                     duplicates++;
                 } else {
-                    state.addRoute(route.start(), route.end(), route.distance());
+                    state.addRoute(item.start(), item.end(), item.distance());
                     added++;
                 }
             }
             tripManager.save();
             refreshAll();
             JOptionPane.showMessageDialog(this,
-                    "Se agregaron " + added + " rutas. Duplicadas omitidas: " + duplicates + ".",
-                    "Carga completada", JOptionPane.INFORMATION_MESSAGE);
+                    "Loaded " + added + " routes. Skipped duplicates: " + duplicates + ".");
         } catch (IOException exception) {
-            showError("No se pudo cargar el CSV", exception.getMessage());
-        }
-    }
-
-    private void editSelectedRoute() {
-        int row = routesTable.getSelectedRow();
-        if (row < 0) {
-            showError("Selecciona una ruta", "Debes seleccionar una fila antes de editarla.");
-            return;
-        }
-        int modelRow = routesTable.convertRowIndexToModel(row);
-        int routeId = (int) routesModel.getValueAt(modelRow, 0);
-        Route route = state.getRoutes().stream()
-                .filter(candidate -> candidate.getId() == routeId)
-                .findFirst().orElse(null);
-        if (route == null) {
-            return;
-        }
-        String value = JOptionPane.showInputDialog(this,
-                "Nueva distancia para " + route.getStart() + " → " + route.getEnd() + ":",
-                route.getDistance());
-        if (value == null) {
-            return;
-        }
-        try {
-            int distance = Integer.parseInt(value.trim());
-            if (distance <= 0) {
-                throw new NumberFormatException();
-            }
-            route.setDistance(distance);
-            tripManager.save();
-            refreshAll();
-        } catch (NumberFormatException exception) {
-            showError("Distancia inválida", "Ingresa un número entero mayor que cero.");
-        }
-    }
-
-    private void generateTrip() {
-        try {
-            tripManager.createTrip((String) originBox.getSelectedItem(),
-                    (String) destinationBox.getSelectedItem(),
-                    (Vehicle) vehicleBox.getSelectedItem());
-            cardLayout.show(contentPanel, "trips");
-        } catch (IllegalArgumentException | IllegalStateException exception) {
-            showError("No se pudo generar el viaje", exception.getMessage());
+            JOptionPane.showMessageDialog(this, exception.getMessage(),
+                    "Could not load CSV", JOptionPane.ERROR_MESSAGE);
         }
     }
 
     private void refreshAll() {
-        refreshRoutes();
-        refreshGenerator();
+        refreshRoutesTable();
+        refreshSelections();
         refreshTrips();
         refreshHistory();
     }
 
-    private void refreshRoutes() {
-        routesModel.setRowCount(0);
+    private void refreshSelections() {
+        String selectedStart = (String) startBox.getSelectedItem();
+        String selectedEnd = (String) endBox.getSelectedItem();
+        String selectedVehicle = (String) typeBox.getSelectedItem();
+        LinkedHashSet<String> locations = new LinkedHashSet<>();
         for (Route route : state.getRoutes()) {
-            routesModel.addRow(new Object[]{route.getId(), route.getStart(), route.getEnd(), route.getDistance()});
+            locations.add(route.getStart());
+            locations.add(route.getEnd());
+        }
+        startBox.setModel(new DefaultComboBoxModel<>(locations.toArray(String[]::new)));
+        endBox.setModel(new DefaultComboBoxModel<>(locations.toArray(String[]::new)));
+        if (locations.contains(selectedStart)) startBox.setSelectedItem(selectedStart);
+        if (locations.contains(selectedEnd)) endBox.setSelectedItem(selectedEnd);
+        if (endBox.getItemCount() > 1 && endBox.getSelectedIndex() == startBox.getSelectedIndex()) {
+            endBox.setSelectedIndex(1);
+        }
+
+        DefaultComboBoxModel<String> vehicles = new DefaultComboBoxModel<>();
+        vehicles.addElement("✻✻Select type of transportation✻✻");
+        for (Vehicle vehicle : state.availableVehicles()) {
+            vehicles.addElement(vehicle.getName());
+        }
+        typeBox.setModel(vehicles);
+        if (selectedVehicle != null) typeBox.setSelectedItem(selectedVehicle);
+        if (typeBox.getSelectedIndex() < 0) typeBox.setSelectedIndex(0);
+
+        boolean driversAvailable = state.availableDrivers() > 0;
+        noPilotsLabel.setVisible(!driversAvailable);
+        generateTrip.setEnabled(driversAvailable && !locations.isEmpty());
+    }
+
+    private void generateTripFromForm() {
+        String origin = (String) startBox.getSelectedItem();
+        String destination = (String) endBox.getSelectedItem();
+        String vehicleName = (String) typeBox.getSelectedItem();
+        Vehicle vehicle = state.availableVehicles().stream()
+                .filter(item -> item.getName().equals(vehicleName))
+                .findFirst().orElse(null);
+        try {
+            Trip trip = tripManager.createTrip(origin, destination, vehicle);
+            refreshAll();
+            jTabbedPane1.setSelectedIndex(2);
+            JOptionPane.showMessageDialog(this, "Trip #" + trip.getId() + " is ready to start.");
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            JOptionPane.showMessageDialog(this, exception.getMessage(),
+                    "Could not generate trip", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    private void refreshGenerator() {
-        String selectedOrigin = (String) originBox.getSelectedItem();
-        String selectedDestination = (String) destinationBox.getSelectedItem();
-        Set<String> locations = new LinkedHashSet<>();
-        state.getRoutes().stream()
-                .sorted(Comparator.comparing(Route::getStart, String.CASE_INSENSITIVE_ORDER))
-                .forEach(route -> {
-                    locations.add(route.getStart());
-                    locations.add(route.getEnd());
-                });
-        originBox.setModel(new DefaultComboBoxModel<>(locations.toArray(String[]::new)));
-        destinationBox.setModel(new DefaultComboBoxModel<>(locations.toArray(String[]::new)));
-        selectIfPresent(originBox, selectedOrigin);
-        selectIfPresent(destinationBox, selectedDestination);
-        if (destinationBox.getItemCount() > 1 && destinationBox.getSelectedIndex() == 0) {
-            destinationBox.setSelectedIndex(1);
+    private void startOrRefuel(int slot) {
+        Trip trip = visibleTrips[slot];
+        if (trip == null) return;
+        if (trip.getStatus() == TripStatus.PREPARED) {
+            tripManager.startTrip(trip);
+        } else if (trip.getStatus() == TripStatus.OUT_OF_FUEL_OUTBOUND
+                || trip.getStatus() == TripStatus.OUT_OF_FUEL_RETURN) {
+            tripManager.refuel(trip);
         }
-
-        Integer selectedVehicleId = vehicleBox.getSelectedItem() instanceof Vehicle vehicle
-                ? vehicle.getId() : null;
-        List<Vehicle> available = state.availableVehicles();
-        vehicleBox.setModel(new DefaultComboBoxModel<>(available.toArray(Vehicle[]::new)));
-        if (selectedVehicleId != null) {
-            for (int index = 0; index < vehicleBox.getItemCount(); index++) {
-                if (vehicleBox.getItemAt(index).getId() == selectedVehicleId) {
-                    vehicleBox.setSelectedIndex(index);
-                    break;
-                }
-            }
-        }
-
-        long availableDrivers = state.availableDrivers();
-        boolean hasDrivers = availableDrivers > 0;
-        pilotAvailability.setText(hasDrivers
-                ? "Pilotos disponibles: " + availableDrivers + " de 3"
-                : "No hay pilotos disponibles por el momento");
-        pilotAvailability.setForeground(hasDrivers ? SUCCESS : DANGER);
-        generateButton.setEnabled(hasDrivers && vehicleBox.getItemCount() > 0
-                && originBox.getItemCount() > 0);
     }
 
     private void refreshTrips() {
-        tripsContainer.removeAll();
-        tripCards.clear();
-        List<Trip> activeTrips = state.getTrips().stream()
+        List<Trip> active = state.getTrips().stream()
                 .filter(Trip::isActive)
-                .sorted(Comparator.comparingInt(Trip::getId))
+                .sorted(java.util.Comparator.comparingInt(Trip::getId))
                 .toList();
-        if (activeTrips.isEmpty()) {
-            JLabel empty = new JLabel("No hay viajes preparados o en curso.", SwingConstants.CENTER);
-            empty.setForeground(MUTED);
-            empty.setBorder(BorderFactory.createEmptyBorder(80, 20, 80, 20));
-            tripsContainer.add(empty);
-        } else {
-            for (Trip trip : activeTrips) {
-                TripCard card = new TripCard(trip);
-                tripCards.put(trip.getId(), card);
-                tripsContainer.add(card);
-                tripsContainer.add(Box.createVerticalStrut(12));
-            }
-        }
-        tripsContainer.revalidate();
-        tripsContainer.repaint();
-    }
+        JLabel[] icons = {transport1, transport2, transport3};
+        JLabel[] names = {lblTransport1, lblTransport2, lblTransport3};
+        JLabel[] distances = {lblDistance1, lblDistance2, lblDistance3};
+        JLabel[] starts = {lblStart1, lblStart2, lblStart3};
+        JLabel[] ends = {lblEnd1, lblEnd2, lblEnd3};
+        javax.swing.JButton[] startButtons = {start1, start2, start3};
+        javax.swing.JButton[] returnButtons = {jButton3, jButton5, jButton7};
+        int[] yPositions = {80, 270, 450};
 
-    private void refreshTripProgress(Trip trip) {
-        TripCard card = tripCards.get(trip.getId());
-        if (card != null) {
-            card.refresh();
-        } else {
-            refreshTrips();
+        for (int index = 0; index < visibleTrips.length; index++) {
+            Trip trip = index < active.size() ? active.get(index) : null;
+            visibleTrips[index] = trip;
+            if (trip == null) {
+                icons[index].setIcon(null);
+                icons[index].putClientProperty("vehicleIconPath", null);
+                names[index].setText("Pending");
+                distances[index].setText("Pending");
+                starts[index].setText("Pending");
+                ends[index].setText("Pending");
+                startButtons[index].setEnabled(false);
+                returnButtons[index].setEnabled(false);
+                finishButtons[index].setEnabled(false);
+                continue;
+            }
+
+            Vehicle vehicle = state.findVehicle(trip.getVehicleId()).orElse(null);
+            Driver driver = state.findDriver(trip.getDriverId()).orElse(null);
+            if (vehicle != null) {
+                String iconPath = "/vehicles/" + vehicle.getType().getIconPrefix()
+                        + "_" + vehicle.getUnitNumber() + ".gif";
+                java.net.URL resource = getClass().getResource(iconPath);
+                if (resource != null && !iconPath.equals(
+                        icons[index].getClientProperty("vehicleIconPath"))) {
+                    icons[index].setIcon(new ImageIcon(resource));
+                    icons[index].putClientProperty("vehicleIconPath", iconPath);
+                }
+            }
+            int width = icons[index].getIcon() == null ? 64 : icons[index].getIcon().getIconWidth();
+            double fraction = Math.min(1.0, trip.getCurrentLegProgressKm()
+                    / Math.max(1, trip.getRouteDistanceKm()));
+            boolean returning = trip.getStatus() == TripStatus.RETURNING
+                    || trip.getStatus() == TripStatus.OUT_OF_FUEL_RETURN;
+            int left = index == 0 ? 110 : 120;
+            int right = 690 - width;
+            int x = left + (int) Math.round((right - left) * (returning ? 1 - fraction : fraction));
+            ((org.netbeans.lib.awtextra.AbsoluteLayout) panelTripStart.getLayout())
+                    .addLayoutComponent(icons[index],
+                            new org.netbeans.lib.awtextra.AbsoluteConstraints(
+                                    x, yPositions[index], width, 50));
+
+            names[index].setText("Trip #" + trip.getId() + " · "
+                    + (vehicle == null ? "Vehicle" : vehicle.getName()) + " · "
+                    + trip.getStatus().getDisplayName());
+            names[index].setToolTipText(driver == null ? null : driver.getName());
+            distances[index].setText(String.format(java.util.Locale.ROOT,
+                    "Distance %.0f / %d km · Fuel %.2f gal",
+                    trip.getCurrentLegProgressKm(), trip.getRouteDistanceKm(),
+                    vehicle == null ? 0 : vehicle.getFuel()));
+            starts[index].setText(returning ? trip.getDestination() : trip.getOrigin());
+            ends[index].setText(returning ? trip.getOrigin() : trip.getDestination());
+
+            boolean refuel = trip.getStatus() == TripStatus.OUT_OF_FUEL_OUTBOUND
+                    || trip.getStatus() == TripStatus.OUT_OF_FUEL_RETURN;
+            startButtons[index].setText(refuel ? "Refuel" : "Start");
+            startButtons[index].setEnabled(trip.getStatus() == TripStatus.PREPARED || refuel);
+            boolean arrived = trip.getStatus() == TripStatus.WAITING_RETURN;
+            returnButtons[index].setEnabled(arrived);
+            finishButtons[index].setEnabled(arrived);
         }
+        panelTripStart.revalidate();
+        panelTripStart.repaint();
     }
 
     private void refreshHistory() {
-        historyModel.setRowCount(0);
-        state.getTrips().stream()
-                .filter(trip -> trip.getStatus() == TripStatus.COMPLETED)
-                .sorted(Comparator.comparingInt(Trip::getId).reversed())
-                .forEach(trip -> {
-                    Vehicle vehicle = state.findVehicle(trip.getVehicleId()).orElse(null);
-                    Driver driver = state.findDriver(trip.getDriverId()).orElse(null);
-                    historyModel.addRow(new Object[]{
-                            trip.getId(), trip.getRouteId(), formatDate(trip.getStartedAt()),
-                            formatDate(trip.getEndedAt()),
-                            vehicle == null ? "-" : vehicle.getName(),
-                            driver == null ? "-" : driver.getName(),
-                            trip.getRouteDistanceKm(),
-                            DECIMAL.format(trip.getTotalDistanceKm()),
-                            DECIMAL.format(trip.getFuelConsumed())
-                    });
-                });
-    }
-
-    private void showPersistenceError(IOException exception) {
-        storageLabel.setForeground(DANGER);
-        storageLabel.setText("Error al guardar: " + exception.getMessage());
-        if (!persistenceErrorVisible) {
-            persistenceErrorVisible = true;
-            showError("No se pudo guardar el estado", exception.getMessage());
-        }
-    }
-
-    private void showError(String title, String message) {
-        JOptionPane.showMessageDialog(this, message, title, JOptionPane.ERROR_MESSAGE);
-    }
-
-    private static String formatDate(LocalDateTime date) {
-        return date == null ? "-" : DATE_TIME.format(date);
-    }
-
-    private static void selectIfPresent(JComboBox<String> box, String value) {
-        if (value == null) {
-            return;
-        }
-        for (int index = 0; index < box.getItemCount(); index++) {
-            if (value.equals(box.getItemAt(index))) {
-                box.setSelectedIndex(index);
-                return;
-            }
-        }
-    }
-
-    private static JButton primaryButton(String text) {
-        JButton button = new JButton(text);
-        button.setBackground(PRIMARY);
-        button.setForeground(Color.WHITE);
-        button.setFont(button.getFont().deriveFont(Font.BOLD));
-        button.setFocusPainted(false);
-        return button;
-    }
-
-    private static JButton secondaryButton(String text) {
-        JButton button = new JButton(text);
-        button.setFont(button.getFont().deriveFont(Font.BOLD));
-        button.setFocusPainted(false);
-        return button;
-    }
-
-    private static DefaultTableModel readOnlyModel(String... columns) {
-        return new DefaultTableModel(columns, 0) {
+        DefaultTableModel model = new DefaultTableModel(new String[]{
+            "Route ID", "Start", "End", "Route km", "Vehicle", "Path km", "Fuel gal"
+        }, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
             }
         };
+        for (Trip trip : state.getTrips()) {
+            if (trip.getStatus() != TripStatus.COMPLETED) continue;
+            Vehicle vehicle = state.findVehicle(trip.getVehicleId()).orElse(null);
+            model.addRow(new Object[]{trip.getRouteId(),
+                trip.getStartedAt() == null ? "-" : DATE_TIME.format(trip.getStartedAt()),
+                trip.getEndedAt() == null ? "-" : DATE_TIME.format(trip.getEndedAt()),
+                trip.getRouteDistanceKm(), vehicle == null ? "-" : vehicle.getName(),
+                String.format(java.util.Locale.ROOT, "%.2f", trip.getTotalDistanceKm()),
+                String.format(java.util.Locale.ROOT, "%.2f", trip.getFuelConsumed())});
+        }
+        jTable3.setModel(model);
+        jTable3.setAutoResizeMode(javax.swing.JTable.AUTO_RESIZE_OFF);
+        int[] widths = {65, 145, 145, 80, 115, 90, 80};
+        for (int index = 0; index < widths.length; index++) {
+            jTable3.getColumnModel().getColumn(index).setPreferredWidth(widths[index]);
+        }
     }
 
-    private static ImageIcon loadScaledIcon(String path, int width, int height) {
-        java.net.URL resource = MainFrame.class.getResource(path);
-        if (resource == null) {
-            return null;
-        }
-        Image image = new ImageIcon(resource).getImage()
-                .getScaledInstance(width, height, Image.SCALE_SMOOTH);
-        return new ImageIcon(image);
+    public boolean updateRouteDistance(int routeId, int distance) {
+        if (distance <= 0) return false;
+        Route route = state.getRoutes().stream()
+                .filter(item -> item.getId() == routeId).findFirst().orElse(null);
+        if (route == null) return false;
+        route.setDistance(distance);
+        tripManager.save();
+        refreshAll();
+        return true;
     }
 
-    private final class TripCard extends JPanel {
-        private final Trip trip;
-        private final JLabel routeLabel = new JLabel();
-        private final JLabel statusLabel = new JLabel();
-        private final JLabel vehicleLabel = new JLabel();
-        private final JLabel driverLabel = new JLabel();
-        private final JLabel fuelLabel = new JLabel();
-        private final JProgressBar routeProgress = new JProgressBar(0, 100);
-        private final JProgressBar fuelProgress = new JProgressBar(0, 100);
-        private final JButton startButton = primaryButton("Iniciar");
-        private final JButton returnButton = secondaryButton("Iniciar retorno");
-        private final JButton finishButton = secondaryButton("Finalizar aquí");
-        private final JButton refuelButton = primaryButton("Recargar combustible");
+    class jPanelGradient extends JPanel {
 
-        private TripCard(Trip trip) {
-            this.trip = trip;
-            setLayout(new BorderLayout(18, 8));
-            setMaximumSize(new Dimension(Integer.MAX_VALUE, 190));
-            setBackground(Color.WHITE);
-            setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(new Color(203, 213, 225)),
-                    BorderFactory.createEmptyBorder(15, 16, 15, 16)));
+        private boolean mouseOver = false;
 
-            Vehicle vehicle = state.findVehicle(trip.getVehicleId()).orElse(null);
-            JLabel icon = new JLabel();
-            icon.setPreferredSize(new Dimension(110, 80));
-            if (vehicle != null) {
-                String path = "/vehicles/" + vehicle.getType().getIconPrefix()
-                        + "_" + vehicle.getUnitNumber() + ".gif";
-                icon.setIcon(loadScaledIcon(path, 100, 65));
-            }
-            add(icon, BorderLayout.WEST);
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D g2d = (Graphics2D) g;
 
-            JPanel details = new JPanel();
-            details.setOpaque(false);
-            details.setLayout(new BoxLayout(details, BoxLayout.Y_AXIS));
-            routeLabel.setFont(routeLabel.getFont().deriveFont(Font.BOLD, 16f));
-            statusLabel.setFont(statusLabel.getFont().deriveFont(Font.BOLD));
-            routeProgress.setStringPainted(true);
-            fuelProgress.setStringPainted(true);
-            details.add(routeLabel);
-            details.add(Box.createVerticalStrut(5));
-            details.add(statusLabel);
-            details.add(vehicleLabel);
-            details.add(driverLabel);
-            details.add(Box.createVerticalStrut(7));
-            details.add(routeProgress);
-            details.add(Box.createVerticalStrut(5));
-            details.add(fuelLabel);
-            details.add(fuelProgress);
-            add(details, BorderLayout.CENTER);
+            Color color1 = new Color(84, 51, 255); // Color base
+            Color color2 = new Color(32, 189, 255); // Color al que cambia cuando el mouse está sobre el panel
 
-            JPanel buttons = new JPanel(new GridLayout(4, 1, 6, 6));
-            buttons.setOpaque(false);
-            startButton.addActionListener(event -> tripManager.startTrip(trip));
-            returnButton.addActionListener(event -> tripManager.startReturn(trip));
-            finishButton.addActionListener(event -> tripManager.finishAtDestination(trip));
-            refuelButton.addActionListener(event -> tripManager.refuel(trip));
-            buttons.add(startButton);
-            buttons.add(returnButton);
-            buttons.add(finishButton);
-            buttons.add(refuelButton);
-            add(buttons, BorderLayout.EAST);
-            refresh();
-        }
-
-        private void refresh() {
-            TripStatus status = trip.getStatus();
-            boolean returning = status == TripStatus.RETURNING
-                    || status == TripStatus.OUT_OF_FUEL_RETURN;
-            routeLabel.setText("Viaje #" + trip.getId() + " • "
-                    + (returning
-                    ? trip.getDestination() + " → " + trip.getOrigin() + " (retorno)"
-                    : trip.getOrigin() + " → " + trip.getDestination()));
-            statusLabel.setText(status.getDisplayName());
-            statusLabel.setForeground(status == TripStatus.OUT_OF_FUEL_OUTBOUND
-                    || status == TripStatus.OUT_OF_FUEL_RETURN ? DANGER
-                    : returning ? PRIMARY : SUCCESS);
-
-            Vehicle vehicle = state.findVehicle(trip.getVehicleId()).orElse(null);
-            Driver driver = state.findDriver(trip.getDriverId()).orElse(null);
-            vehicleLabel.setText("Vehículo: " + (vehicle == null ? "-" : vehicle.getName()));
-            driverLabel.setText("Piloto: " + (driver == null ? "-" : driver.getName()));
-
-            int routePercent = trip.getProgressPercentage();
-            routeProgress.setValue(routePercent);
-            routeProgress.setString(DECIMAL.format(trip.getCurrentLegProgressKm())
-                    + " / " + trip.getRouteDistanceKm() + " km");
-            if (vehicle != null) {
-                int fuelPercent = (int) Math.round(vehicle.fuelPercentage());
-                fuelProgress.setValue(fuelPercent);
-                fuelProgress.setString(fuelPercent + "%");
-                fuelLabel.setText("Combustible: " + DECIMAL.format(vehicle.getFuel())
-                        + " / " + DECIMAL.format(vehicle.getType().getTankCapacity()) + " gal");
+            if (mouseOver) {
+                color1 = new Color(153, 0, 255); // Cambia el color base cuando el mouse está sobre el panel
+                color2 = new Color(255, 102, 255); // Cambia el color al que cambia cuando el mouse está sobre el panel
             }
 
-            startButton.setEnabled(status == TripStatus.PREPARED);
-            returnButton.setEnabled(status == TripStatus.WAITING_RETURN);
-            finishButton.setEnabled(status == TripStatus.WAITING_RETURN);
-            refuelButton.setEnabled(status == TripStatus.OUT_OF_FUEL_OUTBOUND
-                    || status == TripStatus.OUT_OF_FUEL_RETURN);
+            int width = getWidth();
+            int height = getHeight();
+
+            GradientPaint gp = new GradientPaint(0, 0, color1, width, height, color2);
+            g2d.setPaint(gp);
+            g2d.fillRect(0, 0, width, height);
+        }
+
+        public void setMouseOver(boolean mouseOver) {
+            this.mouseOver = mouseOver;
+            repaint();
         }
     }
 
-    private static final class PagePanel extends JPanel {
-        private final JPanel body;
+    @SuppressWarnings("unchecked")
 
-        private PagePanel(String titleText, String subtitleText) {
-            super(new BorderLayout(0, 16));
-            setBackground(SURFACE);
-            setBorder(BorderFactory.createEmptyBorder(28, 30, 24, 30));
 
-            JPanel header = new JPanel();
-            header.setOpaque(false);
-            header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
-            JLabel title = new JLabel(titleText);
-            title.setFont(title.getFont().deriveFont(Font.BOLD, 25f));
-            JLabel subtitle = new JLabel(subtitleText);
-            subtitle.setForeground(MUTED);
-            subtitle.setBorder(BorderFactory.createEmptyBorder(4, 0, 12, 0));
-            header.add(title);
-            header.add(subtitle);
-            super.add(header, BorderLayout.PAGE_START);
+    // <editor-fold defaultstate="collapsed" desc="Generated Code">//GEN-BEGIN:initComponents
+    private void initComponents() {
 
-            body = new JPanel(new BorderLayout());
-            body.setOpaque(false);
-            super.add(body, BorderLayout.CENTER);
+        jPanel1 = new jPanelGradient();
+        jLabel3 = new javax.swing.JLabel();
+        jLabel2 = new javax.swing.JLabel();
+        jPanel2 = new jPanelGradient();
+        jLabel1 = new javax.swing.JLabel();
+        jLabel5 = new javax.swing.JLabel();
+        jPanel3 = new jPanelGradient();
+        jLabel6 = new javax.swing.JLabel();
+        jLabel7 = new javax.swing.JLabel();
+        jPanel4 = new jPanelGradient();
+        jLabel8 = new javax.swing.JLabel();
+        jLabel9 = new javax.swing.JLabel();
+        jPanel5 = new jPanelGradient();
+        jLabel10 = new javax.swing.JLabel();
+        jLabel11 = new javax.swing.JLabel();
+        jPanel11 = new jPanelGradient();
+        jLabel27 = new javax.swing.JLabel();
+        jLabel28 = new javax.swing.JLabel();
+        jLabel13 = new javax.swing.JLabel();
+        jLabel12 = new javax.swing.JLabel();
+        jLabel4 = new javax.swing.JLabel();
+        jTabbedPane1 = new javax.swing.JTabbedPane();
+        jPanel6 = new javax.swing.JPanel();
+        btnOpenCSV = new javax.swing.JButton();
+        editDistance = new javax.swing.JButton();
+        jScrollPane1 = new javax.swing.JScrollPane();
+        jTable1 = new javax.swing.JTable();
+        jPanel7 = new javax.swing.JPanel();
+        jPanel10 = new javax.swing.JPanel();
+        jLabel24 = new javax.swing.JLabel();
+        jLabel25 = new javax.swing.JLabel();
+        jLabel26 = new javax.swing.JLabel();
+        startBox = new javax.swing.JComboBox<>();
+        endBox = new javax.swing.JComboBox<>();
+        typeBox = new javax.swing.JComboBox<>();
+        noPilotsLabel = new javax.swing.JLabel();
+        generateTrip = new javax.swing.JButton();
+        panelTripStart = new javax.swing.JPanel();
+        transport3 = new javax.swing.JLabel();
+        jLabel14 = new javax.swing.JLabel();
+        start1 = new javax.swing.JButton();
+        jButton3 = new javax.swing.JButton();
+        lblTransport1 = new javax.swing.JLabel();
+        lblDistance1 = new javax.swing.JLabel();
+        lblStart1 = new javax.swing.JLabel();
+        lblEnd1 = new javax.swing.JLabel();
+        transport1 = new javax.swing.JLabel();
+        jLabel22 = new javax.swing.JLabel();
+        start2 = new javax.swing.JButton();
+        jButton5 = new javax.swing.JButton();
+        transport2 = new javax.swing.JLabel();
+        jLabel23 = new javax.swing.JLabel();
+        start3 = new javax.swing.JButton();
+        jButton7 = new javax.swing.JButton();
+        jButton8 = new javax.swing.JButton();
+        lblBarrera = new javax.swing.JLabel();
+        lblTransport2 = new javax.swing.JLabel();
+        lblDistance2 = new javax.swing.JLabel();
+        lblStart2 = new javax.swing.JLabel();
+        lblEnd2 = new javax.swing.JLabel();
+        lblTransport3 = new javax.swing.JLabel();
+        lblDistance3 = new javax.swing.JLabel();
+        lblStart3 = new javax.swing.JLabel();
+        lblEnd3 = new javax.swing.JLabel();
+        jPanel9 = new javax.swing.JPanel();
+        jScrollPane3 = new javax.swing.JScrollPane();
+        jTable3 = new javax.swing.JTable();
+
+        setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
+        setUndecorated(true);
+        getContentPane().setLayout(new org.netbeans.lib.awtextra.AbsoluteLayout());
+
+        jPanel1.setBackground(new java.awt.Color(102, 255, 204));
+        jPanel1.setForeground(new java.awt.Color(255, 255, 255));
+        jPanel1.setLayout(new org.netbeans.lib.awtextra.AbsoluteLayout());
+
+        jLabel3.setIcon(new javax.swing.ImageIcon(getClass().getResource("/vehicles/logo.png"))); // NOI18N
+        jPanel1.add(jLabel3, new org.netbeans.lib.awtextra.AbsoluteConstraints(60, 10, 80, -1));
+
+        jLabel2.setBackground(new java.awt.Color(255, 255, 255));
+        jLabel2.setFont(new java.awt.Font("Corbel", 0, 24)); // NOI18N
+        jLabel2.setForeground(new java.awt.Color(255, 255, 255));
+        jLabel2.setText("UDRIVE");
+        jPanel1.add(jLabel2, new org.netbeans.lib.awtextra.AbsoluteConstraints(60, 90, -1, -1));
+
+        jPanel2.addMouseMotionListener(new java.awt.event.MouseMotionAdapter() {
+            public void mouseMoved(java.awt.event.MouseEvent evt) {
+                jPanel2MouseMoved(evt);
+            }
+        });
+        jPanel2.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent evt) {
+                jPanel2MouseClicked(evt);
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                jPanel2MouseExited(evt);
+            }
+        });
+        jPanel2.setLayout(new org.netbeans.lib.awtextra.AbsoluteLayout());
+
+        jLabel1.setIcon(new javax.swing.ImageIcon(getClass().getResource("/vehicles/subir-archivo.png"))); // NOI18N
+        jPanel2.add(jLabel1, new org.netbeans.lib.awtextra.AbsoluteConstraints(20, 0, 30, 60));
+
+        jLabel5.setFont(new java.awt.Font("Corbel", 0, 18)); // NOI18N
+        jLabel5.setForeground(new java.awt.Color(255, 255, 255));
+        jLabel5.setText("Load routes");
+        jPanel2.add(jLabel5, new org.netbeans.lib.awtextra.AbsoluteConstraints(70, 20, -1, 30));
+
+        jPanel1.add(jPanel2, new org.netbeans.lib.awtextra.AbsoluteConstraints(0, 140, 200, 60));
+
+        jPanel3.addMouseMotionListener(new java.awt.event.MouseMotionAdapter() {
+            public void mouseMoved(java.awt.event.MouseEvent evt) {
+                jPanel3MouseMoved(evt);
+            }
+        });
+        jPanel3.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent evt) {
+                jPanel3MouseClicked(evt);
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                jPanel3MouseExited(evt);
+            }
+        });
+        jPanel3.setLayout(new org.netbeans.lib.awtextra.AbsoluteLayout());
+
+        jLabel6.setIcon(new javax.swing.ImageIcon(getClass().getResource("/vehicles/carro-nuevo.png"))); // NOI18N
+        jPanel3.add(jLabel6, new org.netbeans.lib.awtextra.AbsoluteConstraints(20, 0, 40, 60));
+
+        jLabel7.setFont(new java.awt.Font("Corbel", 0, 18)); // NOI18N
+        jLabel7.setForeground(new java.awt.Color(255, 255, 255));
+        jLabel7.setText("Generate trip");
+        jPanel3.add(jLabel7, new org.netbeans.lib.awtextra.AbsoluteConstraints(70, 20, -1, 30));
+
+        jPanel1.add(jPanel3, new org.netbeans.lib.awtextra.AbsoluteConstraints(0, 210, 200, 60));
+
+        jPanel4.addMouseMotionListener(new java.awt.event.MouseMotionAdapter() {
+            public void mouseMoved(java.awt.event.MouseEvent evt) {
+                jPanel4MouseMoved(evt);
+            }
+        });
+        jPanel4.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent evt) {
+                jPanel4MouseClicked(evt);
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                jPanel4MouseExited(evt);
+            }
+        });
+        jPanel4.setLayout(new org.netbeans.lib.awtextra.AbsoluteLayout());
+
+        jLabel8.setIcon(new javax.swing.ImageIcon(getClass().getResource("/vehicles/ruta.png"))); // NOI18N
+        jPanel4.add(jLabel8, new org.netbeans.lib.awtextra.AbsoluteConstraints(20, 0, -1, 60));
+
+        jLabel9.setFont(new java.awt.Font("Corbel", 0, 18)); // NOI18N
+        jLabel9.setForeground(new java.awt.Color(255, 255, 255));
+        jLabel9.setText("Trip start");
+        jPanel4.add(jLabel9, new org.netbeans.lib.awtextra.AbsoluteConstraints(80, 20, -1, -1));
+
+        jPanel1.add(jPanel4, new org.netbeans.lib.awtextra.AbsoluteConstraints(0, 280, 200, 60));
+
+        jPanel5.addMouseMotionListener(new java.awt.event.MouseMotionAdapter() {
+            public void mouseMoved(java.awt.event.MouseEvent evt) {
+                jPanel5MouseMoved(evt);
+            }
+        });
+        jPanel5.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent evt) {
+                jPanel5MouseClicked(evt);
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                jPanel5MouseExited(evt);
+            }
+        });
+        jPanel5.setLayout(new org.netbeans.lib.awtextra.AbsoluteLayout());
+
+        jLabel10.setIcon(new javax.swing.ImageIcon(getClass().getResource("/vehicles/historial-de-transacciones.png"))); // NOI18N
+        jPanel5.add(jLabel10, new org.netbeans.lib.awtextra.AbsoluteConstraints(20, 0, -1, 60));
+
+        jLabel11.setFont(new java.awt.Font("Corbel", 0, 18)); // NOI18N
+        jLabel11.setForeground(new java.awt.Color(255, 255, 255));
+        jLabel11.setText("Trip history");
+        jPanel5.add(jLabel11, new org.netbeans.lib.awtextra.AbsoluteConstraints(80, 20, -1, -1));
+
+        jPanel1.add(jPanel5, new org.netbeans.lib.awtextra.AbsoluteConstraints(0, 350, 200, 60));
+
+        jLabel27.setIcon(new javax.swing.ImageIcon(getClass().getResource("/vehicles/cerrar-sesion.png"))); // NOI18N
+
+        jLabel28.setBackground(new java.awt.Color(255, 255, 255));
+        jLabel28.setFont(new java.awt.Font("Corbel", 0, 18)); // NOI18N
+        jLabel28.setForeground(new java.awt.Color(255, 255, 255));
+        jLabel28.setText("Logout");
+
+        javax.swing.GroupLayout jPanel11Layout = new javax.swing.GroupLayout(jPanel11);
+        jPanel11.setLayout(jPanel11Layout);
+        jPanel11Layout.setHorizontalGroup(
+            jPanel11Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(jPanel11Layout.createSequentialGroup()
+                .addGap(20, 20, 20)
+                .addComponent(jLabel27)
+                .addGap(33, 33, 33)
+                .addComponent(jLabel28)
+                .addContainerGap(61, Short.MAX_VALUE))
+        );
+        jPanel11Layout.setVerticalGroup(
+            jPanel11Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addComponent(jLabel27, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+            .addGroup(jPanel11Layout.createSequentialGroup()
+                .addGap(20, 20, 20)
+                .addComponent(jLabel28)
+                .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+        );
+
+        jPanel1.add(jPanel11, new org.netbeans.lib.awtextra.AbsoluteConstraints(0, 420, 200, 60));
+
+        getContentPane().add(jPanel1, new org.netbeans.lib.awtextra.AbsoluteConstraints(0, 0, 200, 700));
+
+        jLabel13.setIcon(new javax.swing.ImageIcon(getClass().getResource("/login/icons8_Multiply_32px.png"))); // NOI18N
+        jLabel13.setToolTipText("");
+        jLabel13.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent evt) {
+                jLabel13MouseClicked(evt);
+            }
+        });
+        getContentPane().add(jLabel13, new org.netbeans.lib.awtextra.AbsoluteConstraints(950, 10, -1, -1));
+
+        jLabel12.setIcon(new javax.swing.ImageIcon(getClass().getResource("/login/icons8_Expand_Arrow_32px.png"))); // NOI18N
+        jLabel12.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent evt) {
+                jLabel12MouseClicked(evt);
+            }
+        });
+        getContentPane().add(jLabel12, new org.netbeans.lib.awtextra.AbsoluteConstraints(910, 10, -1, -1));
+
+        jLabel4.setIcon(new javax.swing.ImageIcon(getClass().getResource("/vehicles/Reef.jpg"))); // NOI18N
+        getContentPane().add(jLabel4, new org.netbeans.lib.awtextra.AbsoluteConstraints(200, 0, 800, 50));
+
+        jPanel6.setBackground(new java.awt.Color(255, 255, 255));
+
+        btnOpenCSV.setText("Load Routes (.csv)");
+        btnOpenCSV.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                btnOpenCSVActionPerformed(evt);
+            }
+        });
+
+        editDistance.setText("Edit Distance");
+        editDistance.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                editDistanceActionPerformed(evt);
+            }
+        });
+
+        jTable1.setModel(new javax.swing.table.DefaultTableModel(
+            new Object [][] {
+
+            },
+            new String [] {
+                "ID", "Start", "End", "Distance"
+            }
+        ));
+        jScrollPane1.setViewportView(jTable1);
+
+        javax.swing.GroupLayout jPanel6Layout = new javax.swing.GroupLayout(jPanel6);
+        jPanel6.setLayout(jPanel6Layout);
+        jPanel6Layout.setHorizontalGroup(
+            jPanel6Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(jPanel6Layout.createSequentialGroup()
+                .addGap(50, 50, 50)
+                .addGroup(jPanel6Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
+                    .addGroup(jPanel6Layout.createSequentialGroup()
+                        .addComponent(btnOpenCSV, javax.swing.GroupLayout.PREFERRED_SIZE, 140, javax.swing.GroupLayout.PREFERRED_SIZE)
+                        .addGap(447, 447, 447)
+                        .addComponent(editDistance, javax.swing.GroupLayout.PREFERRED_SIZE, 130, javax.swing.GroupLayout.PREFERRED_SIZE))
+                    .addComponent(jScrollPane1, javax.swing.GroupLayout.PREFERRED_SIZE, 717, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+        );
+        jPanel6Layout.setVerticalGroup(
+            jPanel6Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(jPanel6Layout.createSequentialGroup()
+                .addGap(40, 40, 40)
+                .addGroup(jPanel6Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(btnOpenCSV, javax.swing.GroupLayout.PREFERRED_SIZE, 40, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addComponent(editDistance, javax.swing.GroupLayout.PREFERRED_SIZE, 40, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addGap(18, 18, 18)
+                .addComponent(jScrollPane1, javax.swing.GroupLayout.PREFERRED_SIZE, 499, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addContainerGap())
+        );
+
+        jTabbedPane1.addTab("tab1", jPanel6);
+
+        jPanel7.setBackground(new java.awt.Color(255, 255, 255));
+
+        jPanel10.setPreferredSize(new java.awt.Dimension(500, 400));
+        jPanel10.setLayout(new org.netbeans.lib.awtextra.AbsoluteLayout());
+
+        jLabel24.setBackground(new java.awt.Color(0, 153, 153));
+        jLabel24.setFont(new java.awt.Font("Corbel", 2, 24)); // NOI18N
+        jLabel24.setForeground(new java.awt.Color(0, 153, 153));
+        jLabel24.setText("Select endpoint");
+        jPanel10.add(jLabel24, new org.netbeans.lib.awtextra.AbsoluteConstraints(290, 57, -1, -1));
+
+        jLabel25.setBackground(new java.awt.Color(0, 153, 153));
+        jLabel25.setFont(new java.awt.Font("Corbel", 2, 24)); // NOI18N
+        jLabel25.setForeground(new java.awt.Color(0, 153, 153));
+        jLabel25.setText("Select starting point");
+        jPanel10.add(jLabel25, new org.netbeans.lib.awtextra.AbsoluteConstraints(49, 57, -1, -1));
+
+        jLabel26.setBackground(new java.awt.Color(0, 153, 153));
+        jLabel26.setFont(new java.awt.Font("Corbel", 2, 24)); // NOI18N
+        jLabel26.setForeground(new java.awt.Color(0, 153, 153));
+        jLabel26.setText("Select type of transportation");
+        jPanel10.add(jLabel26, new org.netbeans.lib.awtextra.AbsoluteConstraints(113, 173, -1, -1));
+
+        startBox.setFont(new java.awt.Font("Dialog", 0, 12)); // NOI18N
+        startBox.setModel(new javax.swing.DefaultComboBoxModel<>(new String[] { "✻✻Select starting point✻✻" }));
+        startBox.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                startBoxActionPerformed(evt);
+            }
+        });
+        jPanel10.add(startBox, new org.netbeans.lib.awtextra.AbsoluteConstraints(52, 93, 190, 30));
+
+        endBox.setFont(new java.awt.Font("Dialog", 0, 12)); // NOI18N
+        endBox.setModel(new javax.swing.DefaultComboBoxModel<>(new String[] { "✻✻✻Select endpoint✻✻✻" }));
+        endBox.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                endBoxActionPerformed(evt);
+            }
+        });
+        jPanel10.add(endBox, new org.netbeans.lib.awtextra.AbsoluteConstraints(270, 93, 193, 30));
+
+        typeBox.setFont(new java.awt.Font("Dialog", 0, 12)); // NOI18N
+        typeBox.setModel(new javax.swing.DefaultComboBoxModel<>(new String[] { "✻✻Select type of transportation✻✻", "Motorcycle 1", "Motorcycle 2", "Motorcycle 3", "Standard Vehicle 1", "Standard Vehicle 2", "Standard Vehicle 3", "Premium Vehicle 1", "Premium Vehicle 2", "Premium Vehicle 3" }));
+        jPanel10.add(typeBox, new org.netbeans.lib.awtextra.AbsoluteConstraints(138, 215, -1, 30));
+
+        noPilotsLabel.setFont(new java.awt.Font("Corbel", 2, 14)); // NOI18N
+        noPilotsLabel.setForeground(new java.awt.Color(255, 0, 0));
+        noPilotsLabel.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        noPilotsLabel.setText("No abiable");
+        jPanel10.add(noPilotsLabel, new org.netbeans.lib.awtextra.AbsoluteConstraints(130, 350, 250, 45));
+
+        generateTrip.setFont(new java.awt.Font("Dialog", 0, 14)); // NOI18N
+        generateTrip.setText("Generate trip");
+        generateTrip.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                generateTripActionPerformed(evt);
+            }
+        });
+        jPanel10.add(generateTrip, new org.netbeans.lib.awtextra.AbsoluteConstraints(160, 290, 190, 60));
+
+        javax.swing.GroupLayout jPanel7Layout = new javax.swing.GroupLayout(jPanel7);
+        jPanel7.setLayout(jPanel7Layout);
+        jPanel7Layout.setHorizontalGroup(
+            jPanel7Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(jPanel7Layout.createSequentialGroup()
+                .addGap(150, 150, 150)
+                .addComponent(jPanel10, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGap(180, 180, 180))
+        );
+        jPanel7Layout.setVerticalGroup(
+            jPanel7Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(jPanel7Layout.createSequentialGroup()
+                .addGap(85, 85, 85)
+                .addComponent(jPanel10, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addContainerGap(188, Short.MAX_VALUE))
+        );
+
+        jTabbedPane1.addTab("tab2", jPanel7);
+
+        panelTripStart.setBackground(new java.awt.Color(255, 255, 255));
+        panelTripStart.setLayout(new org.netbeans.lib.awtextra.AbsoluteLayout());
+        panelTripStart.add(transport3, new org.netbeans.lib.awtextra.AbsoluteConstraints(120, 450, -1, 50));
+
+        jLabel14.setIcon(new javax.swing.ImageIcon(getClass().getResource("/vehicles/carretera.png"))); // NOI18N
+        panelTripStart.add(jLabel14, new org.netbeans.lib.awtextra.AbsoluteConstraints(120, 480, 570, 30));
+
+        start1.setFont(new java.awt.Font("Corbel", 3, 14)); // NOI18N
+        start1.setText("Start");
+        start1.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent evt) {
+                start1MouseClicked(evt);
+            }
+        });
+        start1.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                start1ActionPerformed(evt);
+            }
+        });
+        panelTripStart.add(start1, new org.netbeans.lib.awtextra.AbsoluteConstraints(30, 110, 70, -1));
+
+        jButton3.setFont(new java.awt.Font("Corbel", 3, 14)); // NOI18N
+        jButton3.setText("Return");
+        panelTripStart.add(jButton3, new org.netbeans.lib.awtextra.AbsoluteConstraints(700, 110, -1, -1));
+
+        lblTransport1.setFont(new java.awt.Font("Corbel", 2, 12)); // NOI18N
+        lblTransport1.setText("Pending");
+        panelTripStart.add(lblTransport1, new org.netbeans.lib.awtextra.AbsoluteConstraints(40, 20, -1, -1));
+
+        lblDistance1.setFont(new java.awt.Font("Corbel", 2, 12)); // NOI18N
+        lblDistance1.setText("Pending");
+        panelTripStart.add(lblDistance1, new org.netbeans.lib.awtextra.AbsoluteConstraints(40, 40, -1, -1));
+
+        lblStart1.setFont(new java.awt.Font("Corbel", 2, 12)); // NOI18N
+        lblStart1.setText("Pending");
+        panelTripStart.add(lblStart1, new org.netbeans.lib.awtextra.AbsoluteConstraints(40, 60, -1, -1));
+
+        lblEnd1.setFont(new java.awt.Font("Corbel", 2, 12)); // NOI18N
+        lblEnd1.setHorizontalAlignment(javax.swing.SwingConstants.RIGHT);
+        lblEnd1.setText("Pending");
+        panelTripStart.add(lblEnd1, new org.netbeans.lib.awtextra.AbsoluteConstraints(608, 60, 160, -1));
+        panelTripStart.add(transport1, new org.netbeans.lib.awtextra.AbsoluteConstraints(110, 80, -1, 50));
+        transport1.getAccessibleContext().setAccessibleDescription("");
+
+        jLabel22.setIcon(new javax.swing.ImageIcon(getClass().getResource("/vehicles/carretera.png"))); // NOI18N
+        panelTripStart.add(jLabel22, new org.netbeans.lib.awtextra.AbsoluteConstraints(110, 110, 580, 30));
+
+        start2.setFont(new java.awt.Font("Corbel", 3, 14)); // NOI18N
+        start2.setText("Start");
+        start2.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                start2ActionPerformed(evt);
+            }
+        });
+        panelTripStart.add(start2, new org.netbeans.lib.awtextra.AbsoluteConstraints(40, 300, 70, -1));
+
+        jButton5.setFont(new java.awt.Font("Corbel", 3, 14)); // NOI18N
+        jButton5.setText("Return");
+        jButton5.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jButton5ActionPerformed(evt);
+            }
+        });
+        panelTripStart.add(jButton5, new org.netbeans.lib.awtextra.AbsoluteConstraints(700, 300, -1, -1));
+        panelTripStart.add(transport2, new org.netbeans.lib.awtextra.AbsoluteConstraints(120, 270, -1, 50));
+
+        jLabel23.setIcon(new javax.swing.ImageIcon(getClass().getResource("/vehicles/carretera.png"))); // NOI18N
+        panelTripStart.add(jLabel23, new org.netbeans.lib.awtextra.AbsoluteConstraints(120, 300, 570, 30));
+
+        start3.setFont(new java.awt.Font("Corbel", 3, 14)); // NOI18N
+        start3.setText("Start");
+        start3.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                start3ActionPerformed(evt);
+            }
+        });
+        panelTripStart.add(start3, new org.netbeans.lib.awtextra.AbsoluteConstraints(40, 480, 70, -1));
+
+        jButton7.setFont(new java.awt.Font("Corbel", 3, 14)); // NOI18N
+        jButton7.setText("Return");
+        panelTripStart.add(jButton7, new org.netbeans.lib.awtextra.AbsoluteConstraints(700, 480, -1, -1));
+
+        jButton8.setFont(new java.awt.Font("Corbel", 1, 18)); // NOI18N
+        jButton8.setText("Start all");
+        jButton8.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jButton8ActionPerformed(evt);
+            }
+        });
+        panelTripStart.add(jButton8, new org.netbeans.lib.awtextra.AbsoluteConstraints(340, 580, -1, -1));
+        panelTripStart.add(lblBarrera, new org.netbeans.lib.awtextra.AbsoluteConstraints(690, 0, 10, 660));
+
+        lblTransport2.setFont(new java.awt.Font("Corbel", 2, 12)); // NOI18N
+        lblTransport2.setText("Pending");
+        panelTripStart.add(lblTransport2, new org.netbeans.lib.awtextra.AbsoluteConstraints(40, 210, -1, -1));
+
+        lblDistance2.setFont(new java.awt.Font("Corbel", 2, 12)); // NOI18N
+        lblDistance2.setText("Pending");
+        panelTripStart.add(lblDistance2, new org.netbeans.lib.awtextra.AbsoluteConstraints(40, 230, -1, -1));
+
+        lblStart2.setFont(new java.awt.Font("Corbel", 2, 12)); // NOI18N
+        lblStart2.setText("Pending");
+        panelTripStart.add(lblStart2, new org.netbeans.lib.awtextra.AbsoluteConstraints(40, 250, -1, -1));
+
+        lblEnd2.setFont(new java.awt.Font("Corbel", 2, 12)); // NOI18N
+        lblEnd2.setHorizontalAlignment(javax.swing.SwingConstants.RIGHT);
+        lblEnd2.setText("Pending");
+        panelTripStart.add(lblEnd2, new org.netbeans.lib.awtextra.AbsoluteConstraints(638, 240, 130, -1));
+
+        lblTransport3.setFont(new java.awt.Font("Corbel", 2, 12)); // NOI18N
+        lblTransport3.setText("Pending");
+        panelTripStart.add(lblTransport3, new org.netbeans.lib.awtextra.AbsoluteConstraints(40, 390, -1, -1));
+
+        lblDistance3.setFont(new java.awt.Font("Corbel", 2, 12)); // NOI18N
+        lblDistance3.setText("Pending");
+        panelTripStart.add(lblDistance3, new org.netbeans.lib.awtextra.AbsoluteConstraints(40, 410, -1, -1));
+
+        lblStart3.setFont(new java.awt.Font("Corbel", 2, 12)); // NOI18N
+        lblStart3.setText("Pending");
+        panelTripStart.add(lblStart3, new org.netbeans.lib.awtextra.AbsoluteConstraints(40, 430, -1, -1));
+
+        lblEnd3.setFont(new java.awt.Font("Corbel", 2, 12)); // NOI18N
+        lblEnd3.setHorizontalAlignment(javax.swing.SwingConstants.RIGHT);
+        lblEnd3.setText("Pending");
+        panelTripStart.add(lblEnd3, new org.netbeans.lib.awtextra.AbsoluteConstraints(568, 430, 190, -1));
+
+        jTabbedPane1.addTab("tab3", panelTripStart);
+
+        jPanel9.setBackground(new java.awt.Color(255, 255, 255));
+        jPanel9.setLayout(new org.netbeans.lib.awtextra.AbsoluteLayout());
+
+        jTable3.setModel(new javax.swing.table.DefaultTableModel(
+            new Object [][] {
+                {null, null, null, null, null, null},
+                {null, null, null, null, null, null},
+                {null, null, null, null, null, null},
+                {null, null, null, null, null, null}
+            },
+            new String [] {
+                "ID", "Start date/time2", "End date/time", "Distance (km)", "Vehicle", "Fuel consumed"
+            }
+        ));
+        jScrollPane3.setViewportView(jTable3);
+
+        jPanel9.add(jScrollPane3, new org.netbeans.lib.awtextra.AbsoluteConstraints(40, 80, 740, 520));
+
+        jTabbedPane1.addTab("tab4", jPanel9);
+
+        getContentPane().add(jTabbedPane1, new org.netbeans.lib.awtextra.AbsoluteConstraints(190, 10, 820, 700));
+
+        setSize(new java.awt.Dimension(1000, 700));
+        setLocationRelativeTo(null);
+    }// </editor-fold>//GEN-END:initComponents
+
+    private void jPanel2MouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jPanel2MouseClicked
+        jTabbedPane1.setSelectedIndex(0);
+    }//GEN-LAST:event_jPanel2MouseClicked
+
+    private void jPanel2MouseMoved(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jPanel2MouseMoved
+        // Verifica si el mouse ya está sobre el panel
+        ((jPanelGradient) jPanel2).setMouseOver(true);
+
+    }//GEN-LAST:event_jPanel2MouseMoved
+
+    private void jPanel2MouseExited(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jPanel2MouseExited
+        ((jPanelGradient) jPanel2).setMouseOver(false);
+    }//GEN-LAST:event_jPanel2MouseExited
+
+    private void jPanel3MouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jPanel3MouseClicked
+        jTabbedPane1.setSelectedIndex(1);
+    }//GEN-LAST:event_jPanel3MouseClicked
+
+    private void jPanel3MouseMoved(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jPanel3MouseMoved
+        ((jPanelGradient) jPanel3).setMouseOver(true);
+    }//GEN-LAST:event_jPanel3MouseMoved
+
+    private void jPanel3MouseExited(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jPanel3MouseExited
+        ((jPanelGradient) jPanel3).setMouseOver(false);
+    }//GEN-LAST:event_jPanel3MouseExited
+
+    private void jPanel4MouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jPanel4MouseClicked
+        jTabbedPane1.setSelectedIndex(2);
+    }//GEN-LAST:event_jPanel4MouseClicked
+
+    private void jPanel4MouseMoved(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jPanel4MouseMoved
+        ((jPanelGradient) jPanel4).setMouseOver(true);
+    }//GEN-LAST:event_jPanel4MouseMoved
+
+    private void jPanel4MouseExited(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jPanel4MouseExited
+        ((jPanelGradient) jPanel4).setMouseOver(false);
+    }//GEN-LAST:event_jPanel4MouseExited
+
+    private void jPanel5MouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jPanel5MouseClicked
+        jTabbedPane1.setSelectedIndex(3);
+    }//GEN-LAST:event_jPanel5MouseClicked
+
+    private void jPanel5MouseMoved(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jPanel5MouseMoved
+        ((jPanelGradient) jPanel5).setMouseOver(true);
+    }//GEN-LAST:event_jPanel5MouseMoved
+
+    private void jPanel5MouseExited(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jPanel5MouseExited
+        ((jPanelGradient) jPanel5).setMouseOver(false);
+    }//GEN-LAST:event_jPanel5MouseExited
+
+    private void jLabel13MouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jLabel13MouseClicked
+        tripManager.shutdown();
+        dispose();
+    }//GEN-LAST:event_jLabel13MouseClicked
+
+    private void jLabel12MouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_jLabel12MouseClicked
+        this.setState(MainFrame.ICONIFIED);
+    }//GEN-LAST:event_jLabel12MouseClicked
+
+    private void btnOpenCSVActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnOpenCSVActionPerformed
+        // This method is called when the user interacts with the button to open a CSV file.
+        try {
+            chooseCSVFile(); // Attempt to open a file chooser dialog to select a CSV file.
+        } catch (IOException ex) {
+            // If an IOException occurs during file selection,
+            // log the exception using the Java logging framework.
+            java.util.logging.Logger.getLogger(MainFrame.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
         }
+    }//GEN-LAST:event_btnOpenCSVActionPerformed
 
-        @Override
-        public Component add(Component component) {
-            return body.add(component);
-        }
+    private void editDistanceActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_editDistanceActionPerformed
+        Distance distance = new Distance(this);
+        distance.setVisible(true);
 
-        @Override
-        public void add(Component component, Object constraints) {
-            body.add(component, constraints);
-        }
-    }
+    }//GEN-LAST:event_editDistanceActionPerformed
+
+    private void startBoxActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_startBoxActionPerformed
+        // Both location lists are populated from the loaded routes.
+    }//GEN-LAST:event_startBoxActionPerformed
+
+    private void endBoxActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_endBoxActionPerformed
+        // The selected destination is independent of the origin.
+    }//GEN-LAST:event_endBoxActionPerformed
+
+    private void jButton5ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton5ActionPerformed
+        if (visibleTrips[1] != null) tripManager.startReturn(visibleTrips[1]);
+    }//GEN-LAST:event_jButton5ActionPerformed
+
+    private void jButton8ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton8ActionPerformed
+        tripManager.startAll();
+    }//GEN-LAST:event_jButton8ActionPerformed
+
+    private void generateTripActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_generateTripActionPerformed
+        generateTripFromForm();
+    }//GEN-LAST:event_generateTripActionPerformed
+
+    private void start1MouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_start1MouseClicked
+
+
+    }//GEN-LAST:event_start1MouseClicked
+
+    private void start1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_start1ActionPerformed
+        startOrRefuel(0);
+    }//GEN-LAST:event_start1ActionPerformed
+
+    private void start2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_start2ActionPerformed
+        startOrRefuel(1);
+    }//GEN-LAST:event_start2ActionPerformed
+
+    private void start3ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_start3ActionPerformed
+        startOrRefuel(2);
+    }//GEN-LAST:event_start3ActionPerformed
+
+
+    // Variables declaration - do not modify//GEN-BEGIN:variables
+    private javax.swing.JButton btnOpenCSV;
+    private javax.swing.JButton editDistance;
+    private javax.swing.JComboBox<String> endBox;
+    private javax.swing.JButton generateTrip;
+    private javax.swing.JButton jButton3;
+    private javax.swing.JButton jButton5;
+    private javax.swing.JButton jButton7;
+    private javax.swing.JButton jButton8;
+    private javax.swing.JLabel jLabel1;
+    private javax.swing.JLabel jLabel10;
+    private javax.swing.JLabel jLabel11;
+    private javax.swing.JLabel jLabel12;
+    private javax.swing.JLabel jLabel13;
+    private javax.swing.JLabel jLabel14;
+    private javax.swing.JLabel jLabel2;
+    private javax.swing.JLabel jLabel22;
+    private javax.swing.JLabel jLabel23;
+    private javax.swing.JLabel jLabel24;
+    private javax.swing.JLabel jLabel25;
+    private javax.swing.JLabel jLabel26;
+    private javax.swing.JLabel jLabel27;
+    private javax.swing.JLabel jLabel28;
+    private javax.swing.JLabel jLabel3;
+    private javax.swing.JLabel jLabel4;
+    private javax.swing.JLabel jLabel5;
+    private javax.swing.JLabel jLabel6;
+    private javax.swing.JLabel jLabel7;
+    private javax.swing.JLabel jLabel8;
+    private javax.swing.JLabel jLabel9;
+    private javax.swing.JPanel jPanel1;
+    public javax.swing.JPanel jPanel10;
+    private javax.swing.JPanel jPanel11;
+    private javax.swing.JPanel jPanel2;
+    private javax.swing.JPanel jPanel3;
+    private javax.swing.JPanel jPanel4;
+    private javax.swing.JPanel jPanel5;
+    private javax.swing.JPanel jPanel6;
+    private javax.swing.JPanel jPanel7;
+    private javax.swing.JPanel jPanel9;
+    private javax.swing.JScrollPane jScrollPane1;
+    private javax.swing.JScrollPane jScrollPane3;
+    private javax.swing.JTabbedPane jTabbedPane1;
+    public javax.swing.JTable jTable1;
+    private javax.swing.JTable jTable3;
+    public javax.swing.JLabel lblBarrera;
+    private javax.swing.JLabel lblDistance1;
+    private javax.swing.JLabel lblDistance2;
+    private javax.swing.JLabel lblDistance3;
+    private javax.swing.JLabel lblEnd1;
+    private javax.swing.JLabel lblEnd2;
+    private javax.swing.JLabel lblEnd3;
+    private javax.swing.JLabel lblStart1;
+    private javax.swing.JLabel lblStart2;
+    private javax.swing.JLabel lblStart3;
+    private javax.swing.JLabel lblTransport1;
+    private javax.swing.JLabel lblTransport2;
+    private javax.swing.JLabel lblTransport3;
+    private javax.swing.JLabel noPilotsLabel;
+    private javax.swing.JPanel panelTripStart;
+    private javax.swing.JButton start1;
+    private javax.swing.JButton start2;
+    private javax.swing.JButton start3;
+    private javax.swing.JComboBox<String> startBox;
+    public javax.swing.JLabel transport1;
+    public javax.swing.JLabel transport2;
+    public javax.swing.JLabel transport3;
+    private javax.swing.JComboBox<String> typeBox;
+    // End of variables declaration//GEN-END:variables
+
 }
