@@ -86,23 +86,44 @@ public class MainFrame extends javax.swing.JFrame {
         RoundRectangle2D.Float shape = new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 20, 20);
         setShape(shape);
 
-        // Agregar listener para arrastrar la ventana
-        this.addMouseListener(new MouseAdapter() {
-            public void mousePressed(MouseEvent evt) {
-                mouseX = evt.getX();
-                mouseY = evt.getY();
-            }
-        });
-        this.addMouseMotionListener(new MouseAdapter() {
-            public void mouseDragged(MouseEvent evt) {
-                // Obtener la posición actual del mouse en la pantalla
-                int x = evt.getXOnScreen();
-                int y = evt.getYOnScreen();
+        // La franja superior es un componente hijo: el marco no recibe sus eventos.
+        MouseAdapter windowDrag = new MouseAdapter() {
+            private boolean dragging;
 
-                // Calcular la nueva posición de la ventana
-                setLocation(x - mouseX, y - mouseY);
+            @Override
+            public void mousePressed(MouseEvent evt) {
+                Point point = javax.swing.SwingUtilities.convertPoint(
+                        evt.getComponent(), evt.getPoint(), MainFrame.this);
+                dragging = javax.swing.SwingUtilities.isLeftMouseButton(evt)
+                        && point.y < 50;
+                if (dragging) {
+                    mouseX = evt.getXOnScreen() - getX();
+                    mouseY = evt.getYOnScreen() - getY();
+                }
             }
-        });
+
+            @Override
+            public void mouseDragged(MouseEvent evt) {
+                if (dragging) {
+                    setLocation(evt.getXOnScreen() - mouseX,
+                            evt.getYOnScreen() - mouseY);
+                }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent evt) {
+                dragging = false;
+            }
+        };
+        jLabel4.addMouseListener(windowDrag);
+        jLabel4.addMouseMotionListener(windowDrag);
+        jTabbedPane1.addMouseListener(windowDrag);
+        jTabbedPane1.addMouseMotionListener(windowDrag);
+
+        // Las pestañas quedan como contenedor; solo el menú lateral navega.
+        for (int index = 0; index < jTabbedPane1.getTabCount(); index++) {
+            jTabbedPane1.setEnabledAt(index, false);
+        }
 
         panelTripStart.repaint();
          panelTripStart.setFocusable(true);
