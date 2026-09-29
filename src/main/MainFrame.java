@@ -15,7 +15,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.ImageIcon;
-import javax.swing.Icon;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -61,6 +60,17 @@ public class MainFrame extends javax.swing.JFrame {
         });
         this.setUndecorated(true);
         initComponents();
+        jTabbedPane1.setUI(new javax.swing.plaf.basic.BasicTabbedPaneUI() {
+            @Override
+            protected int calculateTabAreaHeight(int placement, int runs, int maxTabHeight) {
+                return 0;
+            }
+
+            @Override
+            protected void paintTabArea(Graphics graphics, int placement, int selectedIndex) {
+                // Navigation is handled by the original sidebar.
+            }
+        });
         this.setLocationRelativeTo(null);
         // Configuración inicial del JLabel de pilotos no disponibles
         noPilotsLabel.setForeground(Color.RED); // Texto en color rojo
@@ -309,7 +319,6 @@ public class MainFrame extends javax.swing.JFrame {
             if (trip == null) {
                 icons[index].setIcon(null);
                 icons[index].putClientProperty("vehicleIconPath", null);
-                icons[index].putClientProperty("vehicleIconReturning", null);
                 names[index].setText("Pending");
                 distances[index].setText("Pending");
                 starts[index].setText("Pending");
@@ -326,16 +335,13 @@ public class MainFrame extends javax.swing.JFrame {
                     || trip.getStatus() == TripStatus.OUT_OF_FUEL_RETURN;
             if (vehicle != null) {
                 String iconPath = "/vehicles/" + vehicle.getType().getIconPrefix()
-                        + "_" + vehicle.getUnitNumber() + ".gif";
+                        + "_" + vehicle.getUnitNumber()
+                        + (returning ? "_return.gif" : ".gif");
                 java.net.URL resource = getClass().getResource(iconPath);
-                if (resource != null && (!iconPath.equals(
-                        icons[index].getClientProperty("vehicleIconPath"))
-                        || !Boolean.valueOf(returning).equals(
-                                icons[index].getClientProperty("vehicleIconReturning")))) {
-                    ImageIcon original = new ImageIcon(resource);
-                    icons[index].setIcon(returning ? mirroredIcon(original) : original);
+                if (resource != null && !iconPath.equals(
+                        icons[index].getClientProperty("vehicleIconPath"))) {
+                    icons[index].setIcon(new ImageIcon(resource));
                     icons[index].putClientProperty("vehicleIconPath", iconPath);
-                    icons[index].putClientProperty("vehicleIconReturning", returning);
                 }
             }
             int width = icons[index].getIcon() == null ? 64 : icons[index].getIcon().getIconWidth();
@@ -370,32 +376,6 @@ public class MainFrame extends javax.swing.JFrame {
         }
         panelTripStart.revalidate();
         panelTripStart.repaint();
-    }
-
-    static Icon mirroredIcon(ImageIcon original) {
-        return new Icon() {
-            @Override
-            public int getIconWidth() {
-                return original.getIconWidth();
-            }
-
-            @Override
-            public int getIconHeight() {
-                return original.getIconHeight();
-            }
-
-            @Override
-            public void paintIcon(java.awt.Component component, Graphics graphics, int x, int y) {
-                Graphics2D mirrored = (Graphics2D) graphics.create();
-                try {
-                    mirrored.translate(x + getIconWidth(), y);
-                    mirrored.scale(-1, 1);
-                    original.paintIcon(component, mirrored, 0, 0);
-                } finally {
-                    mirrored.dispose();
-                }
-            }
-        };
     }
 
     private void refreshHistory() {
@@ -989,7 +969,7 @@ public class MainFrame extends javax.swing.JFrame {
 
         jTabbedPane1.addTab("tab4", jPanel9);
 
-        getContentPane().add(jTabbedPane1, new org.netbeans.lib.awtextra.AbsoluteConstraints(190, 10, 820, 700));
+        getContentPane().add(jTabbedPane1, new org.netbeans.lib.awtextra.AbsoluteConstraints(190, 40, 820, 660));
 
         setSize(new java.awt.Dimension(1000, 700));
         setLocationRelativeTo(null);
