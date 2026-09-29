@@ -969,7 +969,7 @@ public class MainFrame extends javax.swing.JFrame {
 
         jTabbedPane1.addTab("tab4", jPanel9);
 
-        getContentPane().add(jTabbedPane1, new org.netbeans.lib.awtextra.AbsoluteConstraints(200, 40, 800, 660));
+        getContentPane().add(jTabbedPane1, new org.netbeans.lib.awtextra.AbsoluteConstraints(200, 50, 800, 650));
 
         setSize(new java.awt.Dimension(1000, 700));
         setLocationRelativeTo(null);
