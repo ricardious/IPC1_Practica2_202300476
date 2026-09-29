@@ -15,6 +15,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.ImageIcon;
+import javax.swing.Icon;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -308,6 +309,7 @@ public class MainFrame extends javax.swing.JFrame {
             if (trip == null) {
                 icons[index].setIcon(null);
                 icons[index].putClientProperty("vehicleIconPath", null);
+                icons[index].putClientProperty("vehicleIconReturning", null);
                 names[index].setText("Pending");
                 distances[index].setText("Pending");
                 starts[index].setText("Pending");
@@ -320,21 +322,25 @@ public class MainFrame extends javax.swing.JFrame {
 
             Vehicle vehicle = state.findVehicle(trip.getVehicleId()).orElse(null);
             Driver driver = state.findDriver(trip.getDriverId()).orElse(null);
+            boolean returning = trip.getStatus() == TripStatus.RETURNING
+                    || trip.getStatus() == TripStatus.OUT_OF_FUEL_RETURN;
             if (vehicle != null) {
                 String iconPath = "/vehicles/" + vehicle.getType().getIconPrefix()
                         + "_" + vehicle.getUnitNumber() + ".gif";
                 java.net.URL resource = getClass().getResource(iconPath);
-                if (resource != null && !iconPath.equals(
-                        icons[index].getClientProperty("vehicleIconPath"))) {
-                    icons[index].setIcon(new ImageIcon(resource));
+                if (resource != null && (!iconPath.equals(
+                        icons[index].getClientProperty("vehicleIconPath"))
+                        || !Boolean.valueOf(returning).equals(
+                                icons[index].getClientProperty("vehicleIconReturning")))) {
+                    ImageIcon original = new ImageIcon(resource);
+                    icons[index].setIcon(returning ? mirroredIcon(original) : original);
                     icons[index].putClientProperty("vehicleIconPath", iconPath);
+                    icons[index].putClientProperty("vehicleIconReturning", returning);
                 }
             }
             int width = icons[index].getIcon() == null ? 64 : icons[index].getIcon().getIconWidth();
             double fraction = Math.min(1.0, trip.getCurrentLegProgressKm()
                     / Math.max(1, trip.getRouteDistanceKm()));
-            boolean returning = trip.getStatus() == TripStatus.RETURNING
-                    || trip.getStatus() == TripStatus.OUT_OF_FUEL_RETURN;
             int left = index == 0 ? 110 : 120;
             int right = 690 - width;
             int x = left + (int) Math.round((right - left) * (returning ? 1 - fraction : fraction));
@@ -364,6 +370,32 @@ public class MainFrame extends javax.swing.JFrame {
         }
         panelTripStart.revalidate();
         panelTripStart.repaint();
+    }
+
+    static Icon mirroredIcon(ImageIcon original) {
+        return new Icon() {
+            @Override
+            public int getIconWidth() {
+                return original.getIconWidth();
+            }
+
+            @Override
+            public int getIconHeight() {
+                return original.getIconHeight();
+            }
+
+            @Override
+            public void paintIcon(java.awt.Component component, Graphics graphics, int x, int y) {
+                Graphics2D mirrored = (Graphics2D) graphics.create();
+                try {
+                    mirrored.translate(x + getIconWidth(), y);
+                    mirrored.scale(-1, 1);
+                    original.paintIcon(component, mirrored, 0, 0);
+                } finally {
+                    mirrored.dispose();
+                }
+            }
+        };
     }
 
     private void refreshHistory() {
@@ -828,7 +860,7 @@ public class MainFrame extends javax.swing.JFrame {
                 start1ActionPerformed(evt);
             }
         });
-        panelTripStart.add(start1, new org.netbeans.lib.awtextra.AbsoluteConstraints(30, 110, 70, -1));
+        panelTripStart.add(start1, new org.netbeans.lib.awtextra.AbsoluteConstraints(0, 110, 100, -1));
 
         jButton3.setFont(new java.awt.Font("Corbel", 3, 14)); // NOI18N
         jButton3.setText("Return");
@@ -863,7 +895,7 @@ public class MainFrame extends javax.swing.JFrame {
                 start2ActionPerformed(evt);
             }
         });
-        panelTripStart.add(start2, new org.netbeans.lib.awtextra.AbsoluteConstraints(40, 300, 70, -1));
+        panelTripStart.add(start2, new org.netbeans.lib.awtextra.AbsoluteConstraints(10, 300, 100, -1));
 
         jButton5.setFont(new java.awt.Font("Corbel", 3, 14)); // NOI18N
         jButton5.setText("Return");
@@ -885,7 +917,7 @@ public class MainFrame extends javax.swing.JFrame {
                 start3ActionPerformed(evt);
             }
         });
-        panelTripStart.add(start3, new org.netbeans.lib.awtextra.AbsoluteConstraints(40, 480, 70, -1));
+        panelTripStart.add(start3, new org.netbeans.lib.awtextra.AbsoluteConstraints(10, 480, 100, -1));
 
         jButton7.setFont(new java.awt.Font("Corbel", 3, 14)); // NOI18N
         jButton7.setText("Return");
