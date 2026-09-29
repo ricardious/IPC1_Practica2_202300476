@@ -840,7 +840,7 @@ public class MainFrame extends javax.swing.JFrame {
                 start1ActionPerformed(evt);
             }
         });
-        panelTripStart.add(start1, new org.netbeans.lib.awtextra.AbsoluteConstraints(0, 110, 100, -1));
+        panelTripStart.add(start1, new org.netbeans.lib.awtextra.AbsoluteConstraints(10, 110, 90, -1));
 
         jButton3.setFont(new java.awt.Font("Corbel", 3, 14)); // NOI18N
         jButton3.setText("Return");
@@ -875,7 +875,7 @@ public class MainFrame extends javax.swing.JFrame {
                 start2ActionPerformed(evt);
             }
         });
-        panelTripStart.add(start2, new org.netbeans.lib.awtextra.AbsoluteConstraints(10, 300, 100, -1));
+        panelTripStart.add(start2, new org.netbeans.lib.awtextra.AbsoluteConstraints(10, 300, 90, -1));
 
         jButton5.setFont(new java.awt.Font("Corbel", 3, 14)); // NOI18N
         jButton5.setText("Return");
@@ -897,7 +897,7 @@ public class MainFrame extends javax.swing.JFrame {
                 start3ActionPerformed(evt);
             }
         });
-        panelTripStart.add(start3, new org.netbeans.lib.awtextra.AbsoluteConstraints(10, 480, 100, -1));
+        panelTripStart.add(start3, new org.netbeans.lib.awtextra.AbsoluteConstraints(10, 480, 90, -1));
 
         jButton7.setFont(new java.awt.Font("Corbel", 3, 14)); // NOI18N
         jButton7.setText("Return");
@@ -969,7 +969,7 @@ public class MainFrame extends javax.swing.JFrame {
 
         jTabbedPane1.addTab("tab4", jPanel9);
 
-        getContentPane().add(jTabbedPane1, new org.netbeans.lib.awtextra.AbsoluteConstraints(190, 40, 820, 660));
+        getContentPane().add(jTabbedPane1, new org.netbeans.lib.awtextra.AbsoluteConstraints(200, 40, 800, 660));
 
         setSize(new java.awt.Dimension(1000, 700));
         setLocationRelativeTo(null);
